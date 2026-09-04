@@ -1,0 +1,9 @@
+# Tekel Stok — bağımlılıklar (Python 3.12, 64-bit)
+#
+# PySide6-Essentials bilerek seçildi: QtWebEngine / Qt3D / QtMultimedia / QtCharts
+# paketlenmez, böylece PyInstaller çıktısı küçük kalır. Ses için QtMultimedia
+# yerine winsound kullanılır (bkz. app/ui/sound.py), grafikler QPainter ile
+# elle çizilir (harici grafik kütüphanesi yok).
+PySide6-Essentials>=6.8,<6.12
+pytest>=8.0            # testler
+pyinstaller>=6.6       # Windows .exe üretimi
