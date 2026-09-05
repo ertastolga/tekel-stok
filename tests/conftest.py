@@ -19,6 +19,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.core.db import Database, open_database  # noqa: E402
+from app.services.container import Services, build_services  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -43,15 +44,45 @@ def db(db_file: Path):
 
 
 @pytest.fixture
+def services(db_file: Path):
+    """Tam servis kabı, kendi geçici veritabanıyla."""
+    svc = build_services(open_database(db_file))
+    yield svc
+    svc.close()
+
+
+@pytest.fixture
 def reopen(db_file: Path):
     """Bağlantıyı tamamen kapatıp diskten yeniden açar (kalıcılık testleri)."""
 
-    def _reopen(database: Database) -> Database:
-        if database.is_open:
-            database.close()
+    def _reopen(target: Database | Services):
+        if isinstance(target, Services):
+            target.close()
+            return build_services(open_database(db_file))
+        if target.is_open:
+            target.close()
         return open_database(db_file)
 
     return _reopen
+
+
+# --- Ortak test verisi ----------------------------------------------------
+BIRA_BARKOD = "8690504001492"        # geçerli EAN-13 (kontrol hanesi doğru)
+KOLI_BARKOD = "8690504001508"        # geçerli EAN-13
+
+
+@pytest.fixture
+def bira(services):
+    """Tuborg Gold 50 cl — tekli barkod, 80 TL, sayılmış 0 stok."""
+    pid = services.products.quick_create(
+        name="Tuborg Gold 50 cl Kutu",
+        sale_price=8000,
+        barcode=BIRA_BARKOD,
+        initial_stock=0,
+        brand_name="Tuborg",
+        location_id=1,                # Bira Dolabı
+    )
+    return pid
 
 
 def qapp_available() -> bool:

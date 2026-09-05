@@ -168,7 +168,12 @@ _V1_TABLES = [
         last_avg_cost      INTEGER,
         last_purchase_cost INTEGER,
 
-        stock_initialized_at_utc INTEGER,   -- NULL = henüz sayılmadı
+        -- NULL = henüz sayılmadı. Nasıl sayıldığı da saklanır, çünkü
+        -- "saydım, gerçekten sıfır" hâli geçerli bir başlangıçtır ama ortada
+        -- bir stok hareketi bırakmaz (sıfır miktarlı hareket yazılmaz).
+        stock_initialized_at_utc INTEGER,
+        stock_initialized_by     TEXT CHECK (stock_initialized_by IS NULL OR
+                                 stock_initialized_by IN ('INITIAL_STOCK','COUNT','DECLARED_ZERO')),
         last_sale_at_utc         INTEGER,
         last_purchase_at_utc     INTEGER,
         first_stocked_at_utc     INTEGER,

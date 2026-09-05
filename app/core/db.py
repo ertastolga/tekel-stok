@@ -444,16 +444,21 @@ class Database:
         )
 
         # --- Başlangıç stoğu ----------------------------------------------
+        # Damga ile gerekçesi birlikte bulunmalı; ayrıca gerekçe bir harekete ya
+        # da temel sayıma dayanıyorsa o kayıt gerçekten var olmalıdır.
+        # 'DECLARED_ZERO' ("saydım, gerçekten sıfır") bilerek hareket üretmez.
         check(
-            "SELECT COUNT(*) FROM products p "
-            "WHERE p.stock_initialized_at_utc IS NOT NULL "
-            "  AND NOT EXISTS (SELECT 1 FROM stock_movements m "
-            "                   WHERE m.product_id = p.id AND m.movement_type = 'INITIAL_STOCK') "
-            "  AND NOT EXISTS (SELECT 1 FROM count_lines cl JOIN count_sessions cs "
-            "                       ON cs.id = cl.session_id "
-            "                   WHERE cl.product_id = p.id AND cl.is_baseline = 1 "
-            "                     AND cs.status = 'COMMITTED')",
-            "I27: {n} ürün sayılmış görünüyor ama başlangıç kaydı yok.",
+            "SELECT COUNT(*) FROM products p WHERE "
+            "  ((p.stock_initialized_at_utc IS NULL) <> (p.stock_initialized_by IS NULL)) "
+            "  OR (p.stock_initialized_by = 'INITIAL_STOCK' AND NOT EXISTS "
+            "      (SELECT 1 FROM stock_movements m WHERE m.product_id = p.id "
+            "         AND m.movement_type = 'INITIAL_STOCK')) "
+            "  OR (p.stock_initialized_by = 'COUNT' AND NOT EXISTS "
+            "      (SELECT 1 FROM count_lines cl JOIN count_sessions cs "
+            "              ON cs.id = cl.session_id "
+            "        WHERE cl.product_id = p.id AND cl.is_baseline = 1 "
+            "          AND cs.status = 'COMMITTED'))",
+            "I27: {n} ürünün başlangıç stoğu kaydı tutarsız.",
         )
         check(
             "SELECT COUNT(*) FROM (SELECT product_id FROM stock_movements "
