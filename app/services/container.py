@@ -10,7 +10,9 @@ from dataclasses import dataclass
 
 from app import config
 from app.core.db import Database, open_database
+from app.services.analytics_service import AnalyticsService
 from app.services.audit_service import AuditService
+from app.services.backup_service import BackupService
 from app.services.barcode_service import BarcodeService
 from app.services.cart_service import CartService
 from app.services.catalog_service import CatalogService
@@ -19,6 +21,7 @@ from app.services.inventory_service import InventoryService
 from app.services.product_service import ProductService
 from app.services.purchase_service import PurchaseService
 from app.services.sale_service import SaleService
+from app.services.session_grouping_service import SessionGroupingService
 from app.services.settings_service import SettingsService
 from app.services.supplier_service import SupplierService
 
@@ -37,6 +40,9 @@ class Services:
     suppliers: SupplierService
     purchases: PurchaseService
     counts: CountService
+    backup: BackupService
+    analytics: AnalyticsService
+    grouping: SessionGroupingService
 
     def close(self) -> None:
         if self.db.is_open:
@@ -56,6 +62,9 @@ def build_services(db: Database) -> Services:
     suppliers = SupplierService(db)
     purchases = PurchaseService(db, settings, inventory, audit)
     counts = CountService(db, settings, inventory, catalog, audit)
+    backup = BackupService(db, settings)
+    analytics = AnalyticsService(db, settings, inventory, products)
+    grouping = SessionGroupingService(db, settings, audit)
     return Services(
         db=db,
         settings=settings,
@@ -69,6 +78,9 @@ def build_services(db: Database) -> Services:
         suppliers=suppliers,
         purchases=purchases,
         counts=counts,
+        backup=backup,
+        analytics=analytics,
+        grouping=grouping,
     )
 
 
