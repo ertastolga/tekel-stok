@@ -72,6 +72,17 @@ KOLI_BARKOD = "8690504001508"        # geçerli EAN-13
 
 
 @pytest.fixture
+def cips_urunu(services):
+    """Ruffles — ikinci bir ürün gerektiren senaryolar için."""
+    return services.products.quick_create(
+        name="Ruffles Original 105 g",
+        sale_price=5000,
+        initial_stock=0,
+        location_id=6,                # Cips Standı
+    )
+
+
+@pytest.fixture
 def bira(services):
     """Tuborg Gold 50 cl — tekli barkod, 80 TL, sayılmış 0 stok."""
     pid = services.products.quick_create(

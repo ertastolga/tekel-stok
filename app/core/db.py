@@ -388,12 +388,10 @@ class Database:
             "SELECT COUNT(*) FROM products WHERE current_stock <= 0 AND stock_value <> 0",
             "I4: {n} üründe stok yokken değer görünüyor.",
         )
-        check(
-            "SELECT COUNT(*) FROM products "
-            "WHERE current_stock > 0 AND stock_value = 0 "
-            "  AND last_avg_cost IS NULL AND last_purchase_cost IS NULL",
-            "I5: {n} ürünün maliyet temeli yok.",
-        )
+        # NOT: "maliyeti bilinmeyen ürün" burada DENETLENMEZ. Sisteme hiç alış
+        # fişiyle girmemiş, ilk kez sayımla stoğa alınmış bir ürünün maliyeti
+        # gerçekten bilinmiyordur — bu bozulma değil, eksik iş bilgisidir ve
+        # ``advisories()`` altında kullanıcıya iş diliyle sunulur.
 
         # --- Barkod / konum ----------------------------------------------
         check(
@@ -610,6 +608,42 @@ class Database:
             )
 
         return problems
+
+    def advisories(self) -> list[str]:
+        """Bozulma DEĞİL, eksik iş bilgisi uyarıları.
+
+        ``check_invariants`` veri bütünlüğünü denetler ve orada çıkan her satır
+        bir hatadır. Buradakiler ise dükkân sahibinin tamamlaması gereken
+        şeylerdir: örneğin hiç alış fişiyle girmemiş, ilk kez sayımla stoğa
+        alınmış bir ürünün maliyeti bilinmez — bu yüzden kâr marjı olduğundan
+        yüksek görünür. Bakım/Panel ekranında sade Türkçeyle gösterilir.
+        """
+        notes: list[str] = []
+        n = self.scalar(
+            "SELECT COUNT(*) FROM products "
+            "WHERE is_active = 1 AND current_stock > 0 AND stock_value = 0 "
+            "  AND last_avg_cost IS NULL AND last_purchase_cost IS NULL",
+            default=0,
+        )
+        if n:
+            notes.append(
+                f"{n} ürünün alış fiyatı hiç girilmemiş. Kâr hesabı bu ürünlerde "
+                "olduğundan yüksek görünür."
+            )
+        n = self.scalar(
+            "SELECT COUNT(*) FROM products WHERE is_active = 1 AND sale_price IS NULL",
+            default=0,
+        )
+        if n:
+            notes.append(f"{n} ürünün satış fiyatı girilmemiş. Bu ürünler satılamaz.")
+        n = self.scalar(
+            "SELECT COUNT(*) FROM products "
+            "WHERE is_active = 1 AND stock_initialized_at_utc IS NULL",
+            default=0,
+        )
+        if n:
+            notes.append(f"{n} ürün henüz sayılmadı. Stokları bilinmiyor.")
+        return notes
 
 
 def open_database(path: str | Path) -> Database:
