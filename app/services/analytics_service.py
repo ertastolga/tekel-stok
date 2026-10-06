@@ -53,6 +53,89 @@ class DashboardData:
     advisories: list = field(default_factory=list)
 
 
+@dataclass(frozen=True, slots=True)
+class PaymentBreakdown:
+    """Ödeme yöntemine göre ciro kırılımı.
+
+    Her kova AYRI sayılır. ``kaydedilmemis`` YALNIZCA ``payment_method IS NULL``
+    satırlardır — ödeme seçimi eklenmeden önce yazılmış satışlar. Veresiye ve
+    Diğer, "bilinmiyor" ile ASLA karıştırılmaz.
+    """
+
+    nakit: int = 0
+    kart: int = 0
+    veresiye: int = 0
+    diger: int = 0
+    kaydedilmemis: int = 0
+
+    @property
+    def total(self) -> int:
+        return self.nakit + self.kart + self.veresiye + self.diger + self.kaydedilmemis
+
+    def percent(self, amount: int) -> float:
+        return (amount / self.total * 100) if self.total else 0.0
+
+    def buckets(self) -> list[tuple[str, int, float]]:
+        """(etiket, tutar, yüzde) — yalnızca DOLU kovalar, büyükten küçüğe.
+
+        Boş kovalar gizlenir ki panel gereksiz sıfır satırıyla dolmasın; ama
+        dolu olan her kova kendi adıyla görünür.
+        """
+        from app.core.models import PAYMENT_LABELS, PaymentMethod
+
+        ham = [
+            (PAYMENT_LABELS[PaymentMethod.CASH], self.nakit),
+            (PAYMENT_LABELS[PaymentMethod.CARD], self.kart),
+            (PAYMENT_LABELS[PaymentMethod.CREDIT], self.veresiye),
+            (PAYMENT_LABELS[PaymentMethod.OTHER], self.diger),
+            (PAYMENT_LABELS[None], self.kaydedilmemis),
+        ]
+        dolu = [(ad, tutar) for ad, tutar in ham if tutar]
+        dolu.sort(key=lambda item: item[1], reverse=True)
+        return [(ad, tutar, self.percent(tutar)) for ad, tutar in dolu]
+
+
+@dataclass(frozen=True, slots=True)
+class BasketSummary:
+    """KESİN sepet (Sepetli Satış) özeti.
+
+    Hızlı Satış işlemleri buraya GİRMEZ: onlar tek tek satış olaylarıdır,
+    müşteri sepeti değildir.
+    """
+
+    basket_count: int = 0
+    revenue: int = 0
+    item_count: int = 0
+
+    @property
+    def avg_basket_value(self) -> int:
+        return round(self.revenue / self.basket_count) if self.basket_count else 0
+
+    @property
+    def avg_items_per_basket(self) -> float:
+        return (self.item_count / self.basket_count) if self.basket_count else 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class SalesFirstDashboardData:
+    """SALES_FIRST panelinin gösterdiği her şey.
+
+    Kâr ve maliyet BİLEREK YOKTUR: stoksuz satış serbest olduğu için birçok
+    satışın maliyeti tahminidir; panelde kesin bir kâr rakamı göstermek
+    yanıltıcı olurdu. Kâr Yönetim ekranlarında kalır.
+    """
+
+    business_date: str = ""
+    revenue: int = 0
+    item_count: int = 0
+    sale_count: int = 0
+    basket: BasketSummary = field(default_factory=BasketSummary)
+    payments: PaymentBreakdown = field(default_factory=PaymentBreakdown)
+    top_products: list = field(default_factory=list)
+    hourly: list = field(default_factory=list)
+    comparison: list = field(default_factory=list)
+
+
 class AnalyticsService:
     def __init__(self, db: Database, settings, inventory, products) -> None:
         self.db = db
@@ -229,7 +312,115 @@ class AnalyticsService:
             advisories=self.db.advisories(),
         )
 
+    # ===================== Ödeme kırılımı ================================
+    def payment_breakdown(self, start: str, end: str) -> PaymentBreakdown:
+        """Ödeme yöntemine göre ciro — her kova AÇIKÇA sayılır.
+
+        ``toplam − nakit − kart`` gibi bir çıkarma BİLEREK kullanılmaz: bugün
+        doğru görünür ama ileride bir VERESIYE ya da DIGER satışı yazıldığı an
+        o tutar sessizce "Kaydedilmemiş" diye etiketlenirdi.
+
+        ``entry_type`` filtresi yoktur: ters kayıtlar negatif tutar taşıdığı
+        için kovalar kendiliğinden netleşir. ``daily_sales_rollup`` yalnızca
+        nakit/kart kovası tanıdığı için bu ayrımı YAPAMAZ; yetkili kaynak
+        ``sales`` tablosudur.
+        """
+        row = self.db.query_one(
+            "SELECT "
+            "  COALESCE(SUM(CASE WHEN payment_method = 'NAKIT'    "
+            "            THEN total_amount ELSE 0 END), 0) AS nakit, "
+            "  COALESCE(SUM(CASE WHEN payment_method = 'KART'     "
+            "            THEN total_amount ELSE 0 END), 0) AS kart, "
+            "  COALESCE(SUM(CASE WHEN payment_method = 'VERESIYE' "
+            "            THEN total_amount ELSE 0 END), 0) AS veresiye, "
+            "  COALESCE(SUM(CASE WHEN payment_method = 'DIGER'    "
+            "            THEN total_amount ELSE 0 END), 0) AS diger, "
+            "  COALESCE(SUM(CASE WHEN payment_method IS NULL      "
+            "            THEN total_amount ELSE 0 END), 0) AS kaydedilmemis "
+            "  FROM sales WHERE business_date BETWEEN ? AND ?",
+            (start, end),
+        )
+        return PaymentBreakdown(
+            nakit=row["nakit"], kart=row["kart"], veresiye=row["veresiye"],
+            diger=row["diger"], kaydedilmemis=row["kaydedilmemis"],
+        )
+
+    # ===================== Sepet özeti ===================================
+    def basket_summary(self, start: str, end: str) -> BasketSummary:
+        """KESİN sepet istatistikleri: yalnızca Sepetli Satış, geri alınmamış."""
+        row = self.db.query_one(
+            "SELECT COUNT(*) AS adet, "
+            "       COALESCE(SUM(total_amount), 0) AS ciro, "
+            "       COALESCE(SUM(item_count), 0)   AS kalem "
+            "  FROM sales "
+            " WHERE entry_type = 'SALE' AND sale_mode = 'SEPET' "
+            "   AND is_reversed = 0 AND business_date BETWEEN ? AND ?",
+            (start, end),
+        )
+        return BasketSummary(
+            basket_count=row["adet"], revenue=row["ciro"], item_count=row["kalem"]
+        )
+
+    def comparison(self) -> list[tuple[str, PeriodSummary]]:
+        """Bugün / dün / geçen hafta aynı gün — hızlı kıyas için."""
+        bugun = self.settings.calendar().today()
+        return [
+            ("Bugün", self.summary(bugun, bugun)),
+            ("Dün", self._day(shift_days(bugun, -1))),
+            ("Geçen hafta aynı gün", self._day(shift_days(bugun, -7))),
+        ]
+
+    def _day(self, gun: str) -> PeriodSummary:
+        return self.summary(gun, gun)
+
+    # ===================== SALES_FIRST paneli ============================
+    def sales_first_dashboard(self) -> SalesFirstDashboardData:
+        """Satış odaklı panelin ihtiyacı olan her şey tek çağrıda.
+
+        Kâr ve maliyet BİLEREK dönülmez; bkz. ``SalesFirstDashboardData``.
+        """
+        gun = self.settings.calendar().today()
+        ozet = self.summary(gun, gun)
+        return SalesFirstDashboardData(
+            business_date=gun,
+            revenue=ozet.revenue,
+            item_count=ozet.item_count,
+            sale_count=ozet.sale_count,
+            basket=self.basket_summary(gun, gun),
+            payments=self.payment_breakdown(gun, gun),
+            top_products=self.top_products(gun, gun, limit=5),
+            hourly=self.by_hour(gun, gun),
+            comparison=self.comparison(),
+        )
+
     # ===================== Kesin sepet verisi ============================
+    def exact_baskets(
+        self, start: str, end: str, limit: int = 500
+    ) -> list[tuple[int, list[int]]]:
+        """KESİN sepet bileşimleri: ``(sale_id, [product_id, ...])``.
+
+        Gelecekteki ürün birlikteliği analizinin VERİ TEMELİDİR. V1.1'de
+        arayüzde kullanılmaz ve hiçbir istatistik üretilmez — burada yalnızca
+        ham veriye erişim vardır.
+
+        YALNIZCA Sepetli Satış sayılır: Hızlı Satış'tan türetilen gruplar
+        TAHMİNİDİR ve kesin sepet verisiyle asla karıştırılmaz.
+        """
+        rows = self.db.query(
+            "SELECT i.sale_id, i.product_id FROM sale_items i "
+            "  JOIN sales s ON s.id = i.sale_id "
+            " WHERE s.entry_type = 'SALE' AND s.sale_mode = 'SEPET' "
+            "   AND s.is_reversed = 0 AND s.business_date BETWEEN ? AND ? "
+            " ORDER BY i.sale_id, i.line_no",
+            (start, end),
+        )
+        sepetler: dict[int, list[int]] = {}
+        for row in rows:
+            sepetler.setdefault(row["sale_id"], []).append(row["product_id"])
+            if len(sepetler) > max(1, limit):
+                break
+        return list(sepetler.items())[: max(1, limit)]
+
     def exact_basket_count(self, start: str, end: str) -> int:
         """KESİN sepet sayısı: yalnızca Sepetli Satış işlemleri.
 

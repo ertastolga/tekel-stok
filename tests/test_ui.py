@@ -70,8 +70,30 @@ def test_tum_sayfalar_acilir(window, qapp):
         assert window.stack.currentWidget() is window.pages[anahtar]
 
 
-def test_ana_ekranda_baslar(window):
-    assert window._current_key == "ana_ekran"
+def test_sales_first_sepetli_satisa_acilir(window):
+    """Dokunmatik POS: uygulama açılır açılmaz satış ekranı gelir."""
+    assert window._current_key == "sepetli_satis"
+
+
+def test_inventory_tracked_ana_ekrana_acilir(qapp, services, bira):
+    """Envanter kipinde V1 davranışı korunur."""
+    from app.core.models import OperatingMode
+
+    services.settings.set("operating_mode", OperatingMode.INVENTORY_TRACKED)
+    win = MainWindow(services)
+    try:
+        assert win._current_key == "ana_ekran"
+    finally:
+        close_window(win, qapp)
+
+
+def test_hizli_satis_erisilebilir_kalir(window, qapp):
+    """Sepetli Satış birincil oldu ama Hızlı Satış SİLİNMEDİ."""
+    assert "hizli_satis" in window.pages
+    assert "hizli_satis" in window.nav_buttons
+    window.go_to("hizli_satis")
+    qapp.processEvents()
+    assert window._current_key == "hizli_satis"
 
 
 def test_gezinme_dugmeleri_sayfalarla_eslesir(window):

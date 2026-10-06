@@ -633,6 +633,13 @@ DEFAULT_LOCATIONS: list[tuple[str, str, int]] = [
 ]
 
 DEFAULT_SETTINGS: dict[str, str] = {
+    # --- Çalışma kipi ---
+    # SALES_FIRST: dokunmatik POS akışı (varsayılan).
+    # INVENTORY_TRACKED: V1'in envanter odaklı davranışı.
+    # YALNIZCA sunum/iş akışını etkiler; defteri ve değişmezleri ETKİLEMEZ.
+    "operating_mode": "SALES_FIRST",
+    # Satıştan sonra son tutarın müşteri ekranında kalma süresi.
+    "customer_display_hold_ms": "4000",
     # --- Satış ---
     "default_sale_mode": "HIZLI",
     "smart_grouping_enabled": "0",

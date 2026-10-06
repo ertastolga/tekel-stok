@@ -56,6 +56,7 @@ class SettingsPage(Page):
         )
         duzen.setSpacing(metrics.PAGE_SPACING)
 
+        duzen.addWidget(self._build_mode_group())
         duzen.addWidget(self._build_sales_group())
         duzen.addWidget(self._build_stock_group())
         duzen.addWidget(self._build_day_group())
@@ -66,18 +67,49 @@ class SettingsPage(Page):
         self.root.addWidget(kaydirma, 1)
 
     # ===================== Gruplar =======================================
+    def _build_mode_group(self) -> QWidget:
+        kutu = QGroupBox("Çalışma Kipi")
+        duzen = QVBoxLayout(kutu)
+        duzen.setSpacing(10)
+
+        satir = QHBoxLayout()
+        satir.addWidget(make_label("Uygulama nasıl çalışsın"))
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItem("Satış Önceliği (dokunmatik kasa)", "SALES_FIRST")
+        self.mode_combo.addItem("Stok Takibi (ayrıntılı envanter)", "INVENTORY_TRACKED")
+        self.mode_combo.currentIndexChanged.connect(self._save_mode)
+        satir.addWidget(self.mode_combo)
+        satir.addStretch(1)
+        duzen.addLayout(satir)
+
+        duzen.addWidget(self._hint(
+            "Satış Önceliği: uygulama doğrudan satış ekranına açılır. Stok "
+            "bilgisi eksik ya da eksi olsa bile satış hiç durmaz ve kasada "
+            "stok uyarısı çıkmaz. Stok ekranları Yönetim altında aynen durur."
+        ))
+        duzen.addWidget(self._hint(
+            "Stok Takibi: uygulama ana ekrana açılır, satış sonrası stok "
+            "uyarıları ve panelde kâr/stok bilgileri gösterilir."
+        ))
+        duzen.addWidget(self._hint(
+            "Bu ayar yalnızca ekranları ve uyarıları değiştirir. "
+            "Stok hareketleri, maliyetler ve geçmiş kayıtlar HER İKİ kipte de "
+            "aynı şekilde tutulur."
+        ))
+        return kutu
+
     def _build_sales_group(self) -> QWidget:
         kutu = QGroupBox("Satış")
         duzen = QVBoxLayout(kutu)
         duzen.setSpacing(10)
 
         satir = QHBoxLayout()
-        satir.addWidget(make_label("Uygulama açılınca gelen satış ekranı"))
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItem("⚡ Hızlı Satış", "HIZLI")
-        self.mode_combo.addItem("🛒 Sepetli Satış", "SEPET")
-        self.mode_combo.currentIndexChanged.connect(self._save_sales)
-        satir.addWidget(self.mode_combo)
+        satir.addWidget(make_label("Stok Takibi kipinde gelen satış ekranı"))
+        self.sale_mode_combo = QComboBox()
+        self.sale_mode_combo.addItem("⚡ Hızlı Satış", "HIZLI")
+        self.sale_mode_combo.addItem("🛒 Sepetli Satış", "SEPET")
+        self.sale_mode_combo.currentIndexChanged.connect(self._save_sales)
+        satir.addWidget(self.sale_mode_combo)
         satir.addStretch(1)
         duzen.addLayout(satir)
 
@@ -240,7 +272,11 @@ class SettingsPage(Page):
         ayarlar = self.services.settings
         self._loading = True
         try:
-            index = self.mode_combo.findData(ayarlar.default_sale_mode())
+            index = self.mode_combo.findData(ayarlar.operating_mode())
+            if index >= 0:
+                self.mode_combo.setCurrentIndex(index)
+
+            index = self.sale_mode_combo.findData(ayarlar.default_sale_mode())
             if index >= 0:
                 self.mode_combo.setCurrentIndex(index)
             self.pack_check.setChecked(ayarlar.pack_confirm_in_sale())
@@ -261,11 +297,23 @@ class SettingsPage(Page):
         finally:
             self._loading = False
 
+    def _save_mode(self) -> None:
+        if getattr(self, "_loading", False):
+            return
+        self.services.settings.set("operating_mode", self.mode_combo.currentData())
+        self.main_window.apply_settings()
+        with scanning_suspended(self.main_window.router):
+            show_info(
+                self, "Çalışma kipi",
+                "Kip değiştirildi. Ekranların tamamen güncellenmesi için "
+                "uygulamayı kapatıp açabilirsiniz.",
+            )
+
     def _save_sales(self) -> None:
         if getattr(self, "_loading", False):
             return
         self.services.settings.set_many({
-            "default_sale_mode": self.mode_combo.currentData(),
+            "default_sale_mode": self.sale_mode_combo.currentData(),
             "pack_confirm_in_sale": int(self.pack_check.isChecked()),
             "smart_grouping_enabled": int(self.group_check.isChecked()),
             "sound_enabled": int(self.sound_check.isChecked()),

@@ -73,6 +73,27 @@ class SettingsService:
         """
         self.set_many(values, mutating=False)
 
+    # -- Çalışma kipi ------------------------------------------------------
+    def operating_mode(self) -> str:
+        """Günlük iş akışı kipi. Tanınmayan değerde güvenli varsayılana döner.
+
+        Bu ayar YALNIZCA sunumu etkiler: stok defteri, maliyet hesabı ve
+        değişmezler kipten tamamen bağımsızdır.
+        """
+        from app.core.models import OperatingMode
+
+        mode = self.get("operating_mode", OperatingMode.SALES_FIRST)
+        return mode if mode in OperatingMode.ALL else OperatingMode.SALES_FIRST
+
+    def is_sales_first(self) -> bool:
+        from app.core.models import OperatingMode
+
+        return self.operating_mode() == OperatingMode.SALES_FIRST
+
+    def customer_display_hold_ms(self) -> int:
+        """Satıştan sonra son tutarın müşteri ekranında kalma süresi (ms)."""
+        return max(0, min(30000, self.get_int("customer_display_hold_ms", 4000)))
+
     # -- Satış -------------------------------------------------------------
     def default_sale_mode(self) -> str:
         mode = self.get("default_sale_mode", "HIZLI")

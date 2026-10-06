@@ -20,6 +20,15 @@ class Page(QWidget):
     nav_group = "yonetim"
     #: Bu sayfa barkod okutma kabul ediyor mu?
     accepts_scans = False
+    #: F10 ("İşlemi Tamamla") kısayolu bu sayfayı tamamlayabilir mi?
+    #:
+    #: VARSAYILAN FALSE'TUR ve bilerek öyledir. İleride ``complete()`` metodu
+    #: olan yeni bir sayfa eklendiğinde genel F10 eylemini KAZARA devralmasın
+    #: diye; kısayolla tamamlanması İSTENEN sayfa bunu AÇIKÇA True yapar.
+    #:
+    #: Sepetli Satış bunu asla açmaz: bir satış YALNIZCA açık bir ödeme
+    #: eylemiyle (NAKİT / KART) tamamlanır, genel bir kısayolla asla.
+    completes_with_shortcut = False
 
     def __init__(self, services, main_window) -> None:
         super().__init__()

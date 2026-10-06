@@ -264,7 +264,11 @@ class QuickSalePage(Page):
             return
 
         satir = sonuc.lines[0]
-        if sonuc.warnings:
+        # SALES_FIRST kipinde stok uyarisi kasada GOSTERILMEZ: stoksuz satis
+        # normal bir durumdur ve her satista sari uyari akisi bozar. Uyari
+        # servis katmaninda yine URETILIR; yalnizca burada gosterilmez.
+        uyar = bool(sonuc.warnings) and not self.services.settings.is_sales_first()
+        if uyar:
             sound.warning()
             self.flash.flash(
                 "✓ SATILDI",

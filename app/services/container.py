@@ -10,6 +10,8 @@ from dataclasses import dataclass
 
 from app import config
 from app.core.db import Database, open_database
+from app.hardware.customer_display import CustomerDisplayService
+from app.payments.service import PaymentService
 from app.services.analytics_service import AnalyticsService
 from app.services.audit_service import AuditService
 from app.services.backup_service import BackupService
@@ -43,8 +45,11 @@ class Services:
     backup: BackupService
     analytics: AnalyticsService
     grouping: SessionGroupingService
+    payments: PaymentService
+    display: CustomerDisplayService
 
     def close(self) -> None:
+        self.display.close()
         if self.db.is_open:
             self.db.close()
 
@@ -65,6 +70,9 @@ def build_services(db: Database) -> Services:
     backup = BackupService(db, settings)
     analytics = AnalyticsService(db, settings, inventory, products)
     grouping = SessionGroupingService(db, settings, audit)
+    # Odeme ve musteri ekrani: veritabani bilmeyen, degistirilebilir adaptorler.
+    payments = PaymentService()
+    display = CustomerDisplayService()
     return Services(
         db=db,
         settings=settings,
@@ -81,6 +89,8 @@ def build_services(db: Database) -> Services:
         backup=backup,
         analytics=analytics,
         grouping=grouping,
+        payments=payments,
+        display=display,
     )
 
 

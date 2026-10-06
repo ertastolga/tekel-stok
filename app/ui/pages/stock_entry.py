@@ -53,6 +53,7 @@ class StockEntryPage(Page):
     nav_key = "stok_girisi"
     nav_group = "gunluk"
     accepts_scans = True
+    completes_with_shortcut = True     # F10 = "Girisi Tamamla" (mevcut davranis)
 
     def __init__(self, services, main_window) -> None:
         super().__init__(services, main_window)

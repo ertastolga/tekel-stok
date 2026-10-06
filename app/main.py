@@ -202,13 +202,6 @@ def main(argv: list[str] | None = None) -> int:
     pencere.show()
     pencere.refresh_today()
 
-    # Açılışta kullanıcının seçtiği satış kipine git; her açılışta sorma.
-    varsayilan = services.settings.default_sale_mode()
-    if varsayilan == "SEPET":
-        pencere.go_to("sepetli_satis")
-    else:
-        pencere.go_to("ana_ekran")
-
     cikis = app.exec()
 
     # --- Kapanış ---

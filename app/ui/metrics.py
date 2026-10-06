@@ -58,6 +58,25 @@ ACTION_CARD_MIN_HEIGHT = 140
 ACTION_CARD_PRIMARY_MIN_HEIGHT = 180
 BARCODE_INPUT_HEIGHT = 60
 
+# --- Dokunmatik POS (AVAPOS 15,6") ---------------------------------------
+# Hedef cihaz klavyesiz bir dokunmatik terminaldir. Parmak hedefi için yaygın
+# öneri en az 48 px'tir; burada 56 px seçildi çünkü kullanıcı 55-75 yaş ve
+# ekranda eldivenle/aceleyle dokunabiliyor.
+#
+# NOT: mevcut WIDGET_ROW_HEIGHT (52) BİLEREK kullanılmadı — 56 px eşiğinin
+# altında kalıyor.
+TOUCH_TARGET_MIN = 56
+#: Sepet satırı: 56 px düğme + dikey nefes payı.
+CART_ROW_HEIGHT = 84
+#: NAKİT / KART düğmeleri: ekranın en büyük hedefleri.
+PAYMENT_BUTTON_HEIGHT = 88
+#: Sepet toplamı karşıdan okunabilmeli.
+FONT_TOTAL_PT = 30.0
+FONT_PAYMENT_PT = 17.0
+FONT_CART_NAME_PT = 14.5
+FONT_CART_QTY_PT = 18.0
+FONT_CART_PRICE_PT = 11.5
+
 # --- Tablolar ------------------------------------------------------------
 TABLE_ROW_HEIGHT = 40
 WIDGET_ROW_HEIGHT = 52

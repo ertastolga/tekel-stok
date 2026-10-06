@@ -66,7 +66,7 @@ class MainWindow(QMainWindow):
         self._restore_geometry()
 
         self.scanner.start()
-        self.go_to("ana_ekran")
+        self.go_to(self._landing_key())
 
     # ===================== Kurulum =======================================
     def _build_ui(self) -> None:
@@ -141,7 +141,8 @@ class MainWindow(QMainWindow):
 
         sinifler = [
             HomePage,
-            QuickSalePage, CartSalePage, StockEntryPage, StockCountPage,
+            # Sepetli Satis BIRINCIL is akisidir; menude de once gelir.
+            CartSalePage, QuickSalePage, StockEntryPage, StockCountPage,
             DashboardPage, ProductsPage, StockStatusPage, SuppliersPage,
             HistoryPage, SettingsPage, BarcodeTestPage,
         ]
@@ -202,6 +203,22 @@ class MainWindow(QMainWindow):
                 qs.activated.connect(eylemler[kisayol.action])
 
     # ===================== Gezinme =======================================
+    def _landing_key(self) -> str:
+        """Uygulama açılınca hangi ekran gelsin?
+
+        SALES_FIRST: doğrudan Sepetli Satış — dükkân sahibi uygulama açılır
+        açılmaz satmaya başlayabilir.
+        INVENTORY_TRACKED: V1 davranışı korunur (Ana Ekran).
+        """
+        try:
+            if self.services.settings.is_sales_first():
+                return "sepetli_satis"
+            if self.services.settings.default_sale_mode() == "SEPET":
+                return "sepetli_satis"
+        except Exception:
+            log.exception("Acilis sayfasi belirlenemedi")
+        return "ana_ekran"
+
     def go_to(self, key: str) -> None:
         if key not in self.pages:
             return
@@ -249,8 +266,19 @@ class MainWindow(QMainWindow):
             sayfa.undo_last()
 
     def _complete_current(self) -> None:
+        """F10 — yalnızca AÇIKÇA katılan sayfaları tamamlar.
+
+        Varsayılan KAPALIDIR: ileride ``complete()`` metodu olan yeni bir sayfa
+        eklendiğinde bu kısayolu KAZARA devralmasın. Sepetli Satış bu bayrağı
+        açmaz; bir satış yalnızca açık bir ödeme eylemiyle (NAKİT / KART)
+        tamamlanır.
+        """
         sayfa = self.current_page()
-        if sayfa is not None and hasattr(sayfa, "complete"):
+        if sayfa is None:
+            return
+        if not getattr(sayfa, "completes_with_shortcut", False):
+            return
+        if hasattr(sayfa, "complete"):
             sayfa.complete()
 
     def _mark_new_customer(self) -> None:

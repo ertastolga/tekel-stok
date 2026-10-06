@@ -65,8 +65,37 @@ class EntryType:
 class PaymentMethod:
     CASH = "NAKIT"
     CARD = "KART"
-    CREDIT = "VERESIYE"       # V1'de kullanılmaz; şema yeri hazır
+    CREDIT = "VERESIYE"       # V1.1'de kullanılmaz; şema yeri hazır
     OTHER = "DIGER"
+
+    #: Rapor kovalarının sırası. ``None`` (hiç kaydedilmemiş) AYRI tutulur ve
+    #: asla başka bir kovayla birleştirilmez.
+    ALL = (CASH, CARD, CREDIT, OTHER)
+
+
+#: Ödeme kovalarının Türkçe etiketleri. ``None`` anahtarı, ödeme seçimi
+#: eklenmeden ÖNCE yazılmış satışları temsil eder.
+PAYMENT_LABELS = {
+    PaymentMethod.CASH: "Nakit",
+    PaymentMethod.CARD: "Kart",
+    PaymentMethod.CREDIT: "Veresiye",
+    PaymentMethod.OTHER: "Diğer",
+    None: "Kaydedilmemiş",
+}
+
+
+class OperatingMode:
+    """Uygulamanın günlük iş akışı kipi.
+
+    Bu YALNIZCA bir sunum/iş akışı ayarıdır. Stok defteri kurallarını, stok
+    hareketlerini, geçmiş veriyi ya da değişmezleri ETKİLEMEZ. Servis katmanı
+    kipten habersizdir; kipi yalnızca arayüz okur.
+    """
+
+    SALES_FIRST = "SALES_FIRST"            # dokunmatik POS: satış önce gelir
+    INVENTORY_TRACKED = "INVENTORY_TRACKED"  # V1 davranışı: envanter odaklı
+
+    ALL = (SALES_FIRST, INVENTORY_TRACKED)
 
 
 class CoverageState:

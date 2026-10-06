@@ -113,6 +113,12 @@ class HomePage(Page):
             return
 
         parcalar = [f"Bugün {format_tl(ozet.revenue)} ciro, {ozet.item_count} ürün"]
+        # SALES_FIRST: stok uyarilari gunluk satis akisinda gosterilmez;
+        # Yonetim > Stok Durumu ekraninda aynen durur.
+        if self.services.settings.is_sales_first():
+            self.header.set_subtitle(" · ".join(parcalar))
+            self.main_window.refresh_today()
+            return
         if dikkat.get("kritik"):
             parcalar.append(f"{dikkat['kritik']} üründe kritik stok")
         if dikkat.get("kontrol_gerekli"):

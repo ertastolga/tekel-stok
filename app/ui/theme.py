@@ -292,6 +292,53 @@ QTableWidget::indicator:checked, QTableView::indicator:checked {{
 #flashName {{ font-size: {metrics.FONT_FLASH_NAME_PT}pt; font-weight: 600; color: {PRIMARY_DARK}; }}
 #flashLine {{ font-size: {metrics.FONT_FLASH_LINE_PT}pt; color: {TEXT}; }}
 
+/* ---- Dokunmatik POS ---- */
+/* Satış onayı ASLA kırmızı değildir; kırmızı yalnızca yıkıcı eylemlerde. */
+QPushButton#cashButton {{
+    background: {PRIMARY}; color: #FFFFFF; border: 2px solid {PRIMARY_DARK};
+    border-radius: 10px; font-size: {metrics.FONT_PAYMENT_PT}pt; font-weight: 600;
+    min-height: {metrics.PAYMENT_BUTTON_HEIGHT - 24}px; padding: 10px 16px;
+}}
+QPushButton#cashButton:hover  {{ background: {PRIMARY_DARK}; }}
+QPushButton#cashButton:pressed {{ background: #0F5330; }}
+QPushButton#cardButton {{
+    background: {CART}; color: #FFFFFF; border: 2px solid {CART_DARK};
+    border-radius: 10px; font-size: {metrics.FONT_PAYMENT_PT}pt; font-weight: 600;
+    min-height: {metrics.PAYMENT_BUTTON_HEIGHT - 24}px; padding: 10px 16px;
+}}
+QPushButton#cardButton:hover  {{ background: {CART_DARK}; }}
+QPushButton#cardButton:pressed {{ background: #11476F; }}
+QPushButton#cashButton:disabled, QPushButton#cardButton:disabled {{
+    background: {DISABLED_BG}; color: {DISABLED_FG}; border-color: {DISABLED_BORDER};
+}}
+
+/* Sepet satırı ve içindeki büyük adet düğmeleri */
+#cartRow {{
+    background: {SURFACE}; border: 1px solid {BORDER}; border-radius: 10px;
+}}
+#cartRow[vurgu="evet"] {{ border: 2px solid {PRIMARY}; background: {PRIMARY_LIGHT}; }}
+#cartName  {{ font-size: {metrics.FONT_CART_NAME_PT}pt; font-weight: 600; }}
+#cartPrice {{ font-size: {metrics.FONT_CART_PRICE_PT}pt; color: {TEXT_MUTED}; }}
+#cartQty   {{ font-size: {metrics.FONT_CART_QTY_PT}pt; font-weight: 600; }}
+#cartTotal {{ font-size: {metrics.FONT_CART_NAME_PT}pt; font-weight: 600; }}
+QPushButton#touchStep {{
+    background: {SURFACE_ALT}; border: 2px solid {BORDER}; border-radius: 10px;
+    font-size: {metrics.FONT_CART_QTY_PT}pt; font-weight: 600; padding: 0px;
+}}
+QPushButton#touchStep:hover   {{ background: #E7ECF3; border-color: {NAV_ACTIVE}; }}
+QPushButton#touchStep:pressed {{ background: #DCE3EC; }}
+QPushButton#touchRemove {{
+    background: {SURFACE}; color: {DANGER}; border: 2px solid {DANGER};
+    border-radius: 10px; font-size: {metrics.FONT_CART_QTY_PT}pt;
+    font-weight: 600; padding: 0px;
+}}
+QPushButton#touchRemove:hover   {{ background: {DANGER_LIGHT}; }}
+QPushButton#touchRemove:pressed {{ background: #F6D4D4; }}
+
+/* Sepet toplamı — ekranın en belirgin rakamı */
+#cartGrandTotal {{ font-size: {metrics.FONT_TOTAL_PT}pt; font-weight: 700; }}
+#cartGrandLabel {{ color: {TEXT_MUTED}; font-size: {metrics.FONT_SMALL_PT}pt; }}
+
 /* ---- Rozetler ---- */
 #badge {{ border-radius: 6px; padding: 3px 10px; font-size: {metrics.FONT_SMALL_PT}pt; }}
 
