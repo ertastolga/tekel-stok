@@ -24,7 +24,25 @@ Uygulama ilk açılışta gerekli her şeyi kendisi hazırlar.
 
 ---
 
-## 2. Günlük kullanım
+## 2. Çalışma kipi
+
+Uygulamanın iki çalışma kipi vardır. **Ayarlar → Çalışma Kipi**'nden seçilir.
+
+| Kip | Ne yapar |
+|---|---|
+| **Satış Önceliği** *(varsayılan)* | Uygulama doğrudan **Sepetli Satış** ekranına açılır. Dokunmatik kasa gibi çalışır. Stok bilgisi eksik ya da eksi olsa bile satış hiç durmaz ve kasada stok uyarısı çıkmaz. |
+| **Stok Takibi** | V1 davranışı: uygulama ana ekrana açılır, satıştan sonra stok uyarıları görünür, panelde kâr ve stok değeri gösterilir. |
+
+> Bu ayar **yalnızca ekranları ve uyarıları** değiştirir. Stok hareketleri,
+> maliyetler ve geçmiş kayıtlar **her iki kipte de aynı şekilde** tutulur.
+> İstediğiniz zaman geri alabilirsiniz; hiçbir veri etkilenmez.
+
+Stok ekranları (Stok Girişi, Stok Sayımı, Stok Durumu) her iki kipte de
+**Yönetim** altında aynen durur.
+
+---
+
+## 3. Günlük kullanım
 
 Ana ekranda beş büyük düğme vardır. Günlük işin tamamı bunlarla yapılır.
 
@@ -41,13 +59,28 @@ yapmanız gerekmez: sepet yok, tamamla düğmesi yok, "Tamam" sorusu yok.
 Ekrana sürekli bakmanız gerekmez: okutma tuttuğunda kısa bir "bip" duyarsınız.
 Sesler Ayarlar'dan kapatılabilir.
 
-### 🛒 Sepetli Satış (F2)
+### 🛒 Sepetli Satış (F2) — ana kasa ekranı
 
-Önce ürünleri okutup listeye eklersiniz, sonunda **F10** ile satışı
-tamamlarsınız. Sepette ürün varken stok **değişmez**; hiçbir şey satılmış
-sayılmaz.
+Satış Önceliği kipinde uygulama buraya açılır. Dokunmatik ekran için
+tasarlanmıştır; fare gerekmez.
 
-Aynı ürünü tekrar okutmak yeni satır açmaz, mevcut satırın adedini artırır.
+**Akış:** barkodu okut → sepet dolar → **NAKİT** ya da **KART**'a dokun → bitti.
+
+- Aynı ürünü tekrar okutmak yeni satır açmaz, **mevcut satırın adedini
+  artırır**. Barkod okutmak, ekrana dokunmaktan her zaman hızlıdır.
+- Her satırda büyük **−**, **+** ve **✕** düğmeleri vardır. 1 adetteyken
+  **−**'ye basmak ürünü sepetten çıkarır.
+- Sepette ürün varken stok ve ciro **değişmez**; hiçbir şey satılmış sayılmaz.
+- Altta toplam büyük yazar ve iki büyük düğme vardır:
+  **NAKİT** (yeşil) ve **KART** (mavi). Tek dokunuş yeterlidir; ayrıca
+  "ödeme seç" diye sorulmaz.
+- Yanlışlıkla iki kez dokunmak **ikinci bir satış yazmaz**.
+- Satıştan sonra sepet temizlenir ve ekran anında bir sonraki barkoda hazır olur.
+
+> **F10 bu ekranda satış tamamlamaz.** Kasa dokunmatik olduğu için satış
+> yalnızca açık bir ödeme eylemiyle (NAKİT / KART) oluşur; yanlışlıkla
+> basılan bir tuş nakit satış yazamaz. F10, Stok Girişi ve Stok Sayımı
+> ekranlarında eskisi gibi çalışır.
 
 ### 📦 Stok Girişi (F3)
 
@@ -77,12 +110,22 @@ gösterilmez; böylece sayarken sayıya göre kendinizi ayarlamazsınız.
 
 ### 📊 Bugün (F7)
 
-Günün cirosu, brüt kârı, satılan ürün sayısı, stok değeri ve dikkat etmeniz
-gereken ürünler.
+**Satış Önceliği** kipinde: günün cirosu, kaç müşteri (tamamlanan sepet),
+satılan ürün adedi, ortalama sepet tutarı, sepet başına ürün, nakit/kart
+dağılımı, en çok satanlar, saatlik satış grafiği ve gün karşılaştırması.
+
+Ödeme dağılımında **"Kaydedilmemiş"** diye bir satır görebilirsiniz: bunlar
+ödeme yöntemi seçilmeden önce yapılmış satışlardır (Hızlı Satış dâhil).
+Bilerek ayrı gösterilir — nakit ya da kart sayılmazlar.
+
+> Satış Önceliği kipinde **kâr gösterilmez**. Stoksuz satış serbest olduğu
+> için birçok satışın maliyeti tahminidir; kesin bir kâr rakamı göstermek
+> yanıltıcı olurdu. Kâr bilgisi Stok Takibi kipinde ve Yönetim ekranlarında
+> durur.
 
 ---
 
-## 3. Barkod okuyucu
+## 4. Barkod okuyucu
 
 Uygulama, klavye gibi çalışan normal USB barkod okuyucularla çalışır.
 Ayar yapmanız gerekmez.
@@ -111,7 +154,7 @@ zaten "24 adet geldi" demektir.
 
 ---
 
-## 4. Ürün tanımlama
+## 5. Ürün tanımlama
 
 Sıfırdan 800 ürün tanımlamanız **gerekmez**. Ürünleri işiniz sırasında,
 azar azar tanıtabilirsiniz.
@@ -131,7 +174,7 @@ barkodu, adı ve fiyatı değiştirirsiniz.
 
 ---
 
-## 5. Ürün nerede duruyor?
+## 6. Ürün nerede duruyor?
 
 Bir ürün aynı anda **birden fazla yerde** bulunabilir: yazın dolapta, kışın
 rafta, ayrıca depoda.
@@ -141,7 +184,7 @@ yalnızca "nerede bulunur" bilgisidir.
 
 ---
 
-## 6. Veriler nerede?
+## 7. Veriler nerede?
 
 | Ne | Nerede |
 |---|---|
@@ -156,7 +199,7 @@ klasöründe tutulur.
 
 ---
 
-## 7. Yedekleme
+## 8. Yedekleme
 
 - Uygulama **kendiliğinden** yedek alır (varsayılan: 2 saatte bir, yalnızca
   veri değiştiyse). Eski otomatik yedekler sınıra göre silinir.
@@ -170,7 +213,7 @@ eski verileriniz geri konur; hiçbir şey kaybolmaz.
 
 ---
 
-## 8. Hiçbir şey silinmez
+## 9. Hiçbir şey silinmez
 
 Bu uygulamada finansal ve stok geçmişi **fiziksel olarak silinmez**.
 
@@ -184,7 +227,7 @@ Bu uygulamada finansal ve stok geçmişi **fiziksel olarak silinmez**.
 
 ---
 
-## 9. Klavye kısayolları
+## 10. Klavye kısayolları
 
 | Tuş | İşlem |
 |---|---|
@@ -197,7 +240,7 @@ Bu uygulamada finansal ve stok geçmişi **fiziksel olarak silinmez**.
 | `F7` | Bugün |
 | `F8` | Son İşlemi Geri Al |
 | `F9` | Stok Sayımı |
-| `F10` | İşlemi Tamamla |
+| `F10` | İşlemi Tamamla (Stok Girişi / Stok Sayımı) — **Sepetli Satış'ta çalışmaz** |
 | `F12` | Barkod Testi |
 | `Esc` | Geri / Vazgeç |
 | `Ctrl+F` | Ara |
@@ -207,7 +250,7 @@ harf kısayolu olsaydı, okutulan barkodun içindeki harf ekranı değiştirirdi
 
 ---
 
-## 10. Bir sorun olursa
+## 11. Bir sorun olursa
 
 - **Ekranda anlamadığınız bir mesaj yok.** Uygulama teknik hata göstermez;
   ne olduğunu sade Türkçe yazar.
@@ -217,7 +260,7 @@ harf kısayolu olsaydı, okutulan barkodun içindeki harf ekranı değiştirirdi
 
 ---
 
-## 11. Geliştirici notları
+## 12. Geliştirici notları
 
 ### Çalıştırma
 
@@ -274,6 +317,10 @@ denetler. Böylece iş kuralları başsız ve hızlı test edilebilir.
 | Karar penceresi açıkken okutma **kuyruğa alınmaz** | Sonradan oynatılırsa gecikmiş sürpriz satış oluşur |
 | Kısmi konum sayımı stoğu düzeltmez | Çok yerde bulunan ürünün tek yerini saymak sahte fark üretir |
 | `business_date` yazma anında **dondurulur** | Gün başlangıcı ayarı değişse bile geçmiş raporlar değişmez |
+| Satış yalnızca açık ödeme eylemiyle tamamlanır | Klavyesiz dokunmatik kasada genel bir kısayol yanlışlıkla satış yazmamalı (`completes_with_shortcut` varsayılanı `False`) |
+| Ödeme onayı veritabanı işleminden ÖNCE | İleride kart terminali beklerken SQLite işlemi açık kalmasın |
+| Ödeme kovaları çıkarmayla değil, açıkça sayılır | `toplam − nakit − kart` ileride VERESİYE/DİĞER tutarını sessizce "bilinmiyor" diye etiketlerdi |
+| Müşteri ekranı çağrıları yutulur | Ekran arızası bir satışı asla engellememeli |
 | Barkodda baştaki sıfırlar korunur | Dahili kodlarda sıfır anlamlıdır; GTIN yalnızca kontrol hanesi doğrulanırsa birleştirilir |
 
 ### V1 kapsamı dışında (şema hazır)
