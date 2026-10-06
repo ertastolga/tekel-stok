@@ -76,6 +76,10 @@ tasarlanmıştır; fare gerekmez.
   "ödeme seç" diye sorulmaz.
 - Yanlışlıkla iki kez dokunmak **ikinci bir satış yazmaz**.
 - Satıştan sonra sepet temizlenir ve ekran anında bir sonraki barkoda hazır olur.
+- *Son Satışı Geri Al* **önceki müşterinin** satışını iptal eder, elinizdeki
+  sepeti değil. Bu yüzden **sepette ürün varken kapalıdır**: eldeki sepeti
+  önce tamamlayın ya da boşaltın. Dilediğiniz satışı her zaman **Geçmiş**
+  ekranından seçip geri alabilirsiniz.
 
 > **F10 bu ekranda satış tamamlamaz.** Kasa dokunmatik olduğu için satış
 > yalnızca açık bir ödeme eylemiyle (NAKİT / KART) oluşur; yanlışlıkla
@@ -238,7 +242,7 @@ Bu uygulamada finansal ve stok geçmişi **fiziksel olarak silinmez**.
 | `F5` | Yenile |
 | `F6` | Ürünler |
 | `F7` | Bugün |
-| `F8` | Son İşlemi Geri Al |
+| `F8` | Son İşlemi Geri Al — **Sepetli Satış'ta sepet boşken** |
 | `F9` | Stok Sayımı |
 | `F10` | İşlemi Tamamla (Stok Girişi / Stok Sayımı) — **Sepetli Satış'ta çalışmaz** |
 | `F12` | Barkod Testi |
