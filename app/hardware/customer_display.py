@@ -104,6 +104,12 @@ class CustomerDisplayService:
 
     Arka arkaya aynı tutar gönderilmez (``_last``): gereksiz seri trafiği
     önlenir ve ileride yavaş bir cihaz kasayı yavaşlatmaz.
+
+    **Önbellek yalnızca BAŞARILI yazmadan sonra güncellenir.** Yazma hata
+    verirse cihazın ne gösterdiği bilinmediği için önbellek geçersiz kılınır
+    (``_last = None``). Aksi hâlde kablosu çıkmış bir ekrana yazmak başarısız
+    olur, servis yine de "bu tutar gösteriliyor" sanar ve kablo takıldığında
+    aynı tutar bir daha HİÇ gönderilmezdi.
     """
 
     def __init__(self, display: CustomerDisplay | None = None) -> None:
@@ -122,20 +128,24 @@ class CustomerDisplayService:
         kurus = int(kurus)
         if kurus == self._last:
             return
-        self._last = kurus
         try:
             self._display.show_total(kurus)
         except Exception:
+            self._last = None      # cihaz durumu BİLİNMİYOR: önbellek geçersiz
             log.warning("Müşteri ekranına tutar yazılamadı", exc_info=True)
+        else:
+            self._last = kurus
 
     def show_idle(self) -> None:
         if self._last == 0:
             return
-        self._last = 0
         try:
             self._display.show_idle()
         except Exception:
+            self._last = None      # cihaz durumu BİLİNMİYOR: önbellek geçersiz
             log.warning("Müşteri ekranı sıfırlanamadı", exc_info=True)
+        else:
+            self._last = 0
 
     def close(self) -> None:
         try:

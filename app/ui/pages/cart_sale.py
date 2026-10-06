@@ -62,6 +62,10 @@ log = logging.getLogger(__name__)
 #: Son okutulan satırın vurgulu kalma süresi.
 HIGHLIGHT_MS = 900
 
+#: Ayar okunamazsa kullanılan ekran bekletme süresi.
+#: ``schema.DEFAULT_SETTINGS["customer_display_hold_ms"]`` ile aynı değer.
+FALLBACK_DISPLAY_HOLD_MS = 4000
+
 
 class CartSalePage(Page):
     nav_title = "🛒  Sepetli Satış"
@@ -418,6 +422,13 @@ class CartSalePage(Page):
         self._finish_success(sonuc, payment_method, son_tutar)
 
     def _finish_success(self, sonuc, payment_method: str, son_tutar: int) -> None:
+        # Müşteri ekranı EN BAŞTA işlenir ve serbest bırakma zamanlayıcısı
+        # hemen kurulur. Aşağıdaki arayüz adımlarından biri hata verse bile
+        # ``_display_hold`` MUTLAKA çözülür; aksi hâlde bayrak True kalır,
+        # ``_publish_display`` kalıcı olarak susar ve ekran o tutarda donardı.
+        self.services.display.show_total(son_tutar)
+        QTimer.singleShot(self._display_hold_ms(), self._release_display_hold)
+
         sound.success()
         self._rebuild_rows()
         self._render()
@@ -432,15 +443,21 @@ class CartSalePage(Page):
         self.flash.flash("✓ SATIŞ TAMAMLANDI", format_tl(son_tutar), ayrinti)
         self.result_stack.setCurrentWidget(self.flash)
 
-        # Müşteri ekranı: son tutar kısa süre kalır, SONRA 0.00'a döner.
-        self.services.display.show_total(son_tutar)
-        QTimer.singleShot(
-            self.services.settings.customer_display_hold_ms(),
-            self._release_display_hold,
-        )
-
         self.barcode.setFocus()
         self.main_window.refresh_today()
+
+    def _display_hold_ms(self) -> int:
+        """Son tutarın müşteri ekranında kalma süresi.
+
+        Ayar okunamasa bile DAİMA bir süre döner: bu değer bekletmeyi çözen
+        zamanlayıcıyı kurar, dolayısıyla burada istisna sızması ekranı
+        kalıcı olarak dondururdu.
+        """
+        try:
+            return self.services.settings.customer_display_hold_ms()
+        except Exception:
+            log.warning("Ekran bekletme süresi okunamadı", exc_info=True)
+            return FALLBACK_DISPLAY_HOLD_MS
 
     def _set_payment_enabled(self, enabled: bool) -> None:
         self.cash_button.setEnabled(enabled and not self.cart.is_empty)
@@ -448,6 +465,26 @@ class CartSalePage(Page):
 
     # ===================== Geri alma =====================================
     def undo_last(self) -> None:
+        """ÖNCEKİ müşterinin satışını iptal eder — eldeki sepeti DEĞİL.
+
+        Sepette ürün varken kapalıdır. Kasada iki ayrı şey aynı anda
+        duruyorsa (yarım sepet + bitmiş bir satış) "geri al" iki anlama
+        gelebilir; acele eden bir kasiyer yanlışını anlamadan önceki
+        müşterinin satışını iptal edebilir.
+
+        Kapı düğmede DEĞİL burada durur: F8 bu metoda düğmenin etkin olup
+        olmadığına bakmadan ulaşır (``main_window._undo_last``).
+        """
+        if not self.cart.is_empty:
+            sound.error()
+            self.banner.show_error(
+                "Sepet dolu olduğu için geri alma kapalı.",
+                "Bu eylem ÖNCEKİ satışı iptal eder. Önce bu sepeti tamamlayın "
+                "ya da boşaltın; dilediğiniz satışı Geçmiş ekranından da geri "
+                "alabilirsiniz.",
+            )
+            return
+
         son = self.services.sales.last_sale()
         if son is None:
             self.banner.show_error("Geri alınacak satış bulunamadı.")
@@ -544,6 +581,14 @@ class CartSalePage(Page):
         self.empty.setVisible(not dolu)
         self.clear_button.setEnabled(dolu)
         self._set_payment_enabled(not self._checkout_busy)
+
+        # Geri alma ÖNCEKİ satışa aittir; eldeki sepetle karışmasın diye
+        # sepet doluyken kapatılır (asıl kapı ``undo_last`` içindedir).
+        self.undo_button.setEnabled(not dolu)
+        self.undo_button.setToolTip(
+            "Önceki satışı iptal eder. Sepet boşaltılınca kullanılabilir."
+            if dolu else "Önceki satışı iptal eder."
+        )
 
         self.total_label.setText(format_tl(self.cart.total))
         self.cash_button.setText(

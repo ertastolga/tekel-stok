@@ -147,6 +147,14 @@ def test_geri_alma_dogru_kovadan_duser(services, bira):
     assert satir["card_amount"] == 0
     assert satir["cash_amount"] == 0
 
+    # Panelin YETKİLİ kaynağı rollup değil ``sales`` tablosudur: ters kayıt
+    # orijinalin ``payment_method``'unu kopyaladığı için kendi kovasından
+    # düşer. "Kaydedilmemiş" kovasına SIZMAZ.
+    kirilim = services.analytics.payment_breakdown(gun, gun)
+    assert kirilim.kart == 0, "ters kayıt KART kovasından düştü"
+    assert kirilim.kaydedilmemis == 0, "ters kayıt bilinmiyor kovasına sızmadı"
+    assert kirilim.total == 0
+
 
 # ===================== Ödeme kovaları ====================================
 def _ham_satis(services, yontem, tutar):
@@ -449,6 +457,47 @@ def test_ayni_tutar_tekrar_gonderilmez():
     ekran.show_total(1000)
     ekran.show_total(2000)
     assert sahte.cagrilar == [("total", 1000), ("total", 2000)]
+
+
+def test_basarisiz_yazma_ONBELLEGI_kirletmez():
+    """Yazma patlarsa "gösterildi" SANILMAZ; cihaz düzelince aynı tutar gider.
+
+    Önbellek başarısız yazmadan sonra da güncellenseydi, kablosu çıkmış bir
+    ekrana yazmak sessizce başarısız olur, servis o tutarı "ekranda" sayar ve
+    kablo takıldığında aynı tutar bir daha HİÇ gönderilmezdi — müşteri işlem
+    boyunca boş ekrana bakardı.
+    """
+    sahte = SahteEkran(patlasin=True)
+    ekran = CustomerDisplayService(sahte)
+
+    ekran.show_total(1000)                   # kablo çıkık: yazma patlar
+    assert sahte.cagrilar == [("total", 1000)]
+
+    sahte.patlasin = False                   # kablo takıldı
+    ekran.show_total(1000)                   # AYNI tutar yeniden denenmeli
+    assert sahte.cagrilar == [("total", 1000), ("total", 1000)], (
+        "başarısız yazma önbelleği kirletti: tutar bir daha gönderilmedi"
+    )
+
+    ekran.show_total(1000)                   # artık gerçekten gösteriliyor
+    assert len(sahte.cagrilar) == 2, "başarılı yazmadan sonra tekrarlanmaz"
+
+
+def test_basarisiz_sifirlama_da_ONBELLEGI_kirletmez():
+    """Aynı güvence ``show_idle()`` için de geçerlidir."""
+    sahte = SahteEkran()
+    ekran = CustomerDisplayService(sahte)
+    ekran.show_total(1000)
+
+    sahte.patlasin = True
+    ekran.show_idle()                        # patlar
+    sahte.patlasin = False
+    ekran.show_idle()                        # yeniden denenebilmeli
+    assert sahte.cagrilar == [
+        ("total", 1000), ("idle", None), ("idle", None)
+    ]
+    ekran.show_idle()                        # artık 0.00 gerçekten ekranda
+    assert len(sahte.cagrilar) == 3
 
 
 def test_seri_ekran_tahmin_yurutmez():

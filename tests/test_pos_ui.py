@@ -456,6 +456,115 @@ def test_bozuk_ekran_satisi_ENGELLEMEZ(sayfa, qapp, services, bira):
     assert sayfa.cart.is_empty
 
 
+def test_basari_yolu_patlasa_bile_ekran_BEKLETMESI_cozulur(
+    sayfa, qapp, services, bira, monkeypatch
+):
+    """Satış yazıldıktan SONRAKİ bir arayüz hatası ekranı donduramaz.
+
+    ``_display_hold`` True kalsaydı ``_publish_display()`` kalıcı olarak susar
+    ve müşteri ekranı o tutarda sonsuza dek takılırdı. Bu yüzden bekletmeyi
+    çözen zamanlayıcı, kırılabilir arayüz adımlarından ÖNCE kurulur.
+    """
+    services.settings.set("customer_display_hold_ms", "0")   # hemen çözülsün
+    sahte = SiraliSahteEkran()
+    services.display.set_display(sahte)
+
+    sayfa.handle_scan(ScanEvent(code=BIRA))
+    qapp.processEvents()
+
+    def patla(*args, **kwargs):
+        raise RuntimeError("şerit çizilemedi")
+
+    monkeypatch.setattr(sayfa.flash, "flash", patla)
+
+    with pytest.raises(RuntimeError):
+        sayfa.complete(PaymentMethod.CASH)
+
+    assert services.sales.last_sale() is not None, "satış YAZILDI"
+    assert sayfa.cart.is_empty
+    assert sayfa._checkout_busy is False
+
+    qapp.processEvents()                     # bekletme zamanlayıcısı ateşlenir
+    assert sayfa._display_hold is False, "bekletme bayrağı takılı KALMADI"
+    assert sahte.cagrilar[-1] == ("idle", None), "ekran 0.00'a döndü"
+
+
+def test_commit_patlarsa_sepet_KORUNUR(
+    sayfa, qapp, window, services, bira, monkeypatch
+):
+    """Ödeme onaylandı ama satış YAZILAMADI: hiçbir şey yarım kalmaz."""
+    def patla(*args, **kwargs):
+        raise RuntimeError("disk dolu")
+
+    monkeypatch.setattr(services.cart, "checkout", patla)
+
+    for _ in range(2):
+        sayfa.handle_scan(ScanEvent(code=BIRA))
+    qapp.processEvents()
+
+    sayfa.cash_button.click()
+    qapp.processEvents()
+
+    assert services.db.scalar("SELECT COUNT(*) FROM sales") == 0, "satış yok"
+    assert sayfa.cart.item_count == 2, "sepet olduğu gibi duruyor"
+    assert services.products.get(bira)["current_stock"] == 48
+    assert window.router.mode.name == "ACTIVE", "okutma yeniden açıldı"
+    assert sayfa.cash_button.isEnabled() and sayfa.card_button.isEnabled()
+    assert sayfa._checkout_busy is False
+    assert sayfa._display_hold is False, "bekletme bayrağı çözüldü"
+    assert "kaydedilemedi" in tr_lower(sayfa.banner.headline.text())
+
+
+# ===================== Geri alma güvenliği ===============================
+def test_sepet_doluyken_geri_alma_KAPALI(sayfa, qapp, window, services, bira):
+    """Yarım sepet varken ÖNCEKİ müşterinin satışı kazara iptal edilemez."""
+    sayfa.handle_scan(ScanEvent(code=BIRA))
+    qapp.processEvents()
+    sayfa.cash_button.click()                # 1. müşteri bitti
+    qapp.processEvents()
+    satis_id = services.sales.last_sale()["id"]
+
+    sayfa.handle_scan(ScanEvent(code=BIRA))  # 2. müşteri okutulmaya başlandı
+    qapp.processEvents()
+
+    assert not sayfa.undo_button.isEnabled(), "düğme kapalı"
+
+    # F8 düğmeyi ATLAR (main_window._undo_last doğrudan metodu çağırır),
+    # bu yüzden asıl kapı undo_last() içindedir.
+    window._undo_last()
+    qapp.processEvents()
+
+    assert services.sales.sale(satis_id)["is_reversed"] == 0, (
+        "önceki müşterinin satışı geri ALINMADI"
+    )
+    assert sayfa.cart.item_count == 1, "eldeki sepet bozulmadı"
+    assert services.products.get(bira)["current_stock"] == 47
+    assert "geri alma kapalı" in tr_lower(sayfa.banner.headline.text())
+
+
+def test_sepet_bosalinca_geri_alma_ACILIR(
+    sayfa, qapp, window, services, bira, monkeypatch
+):
+    """Kapı yalnızca dolu sepette iner: boş sepette geri alma ÇALIŞIR."""
+    from app.ui.pages import cart_sale as modul
+
+    sayfa.handle_scan(ScanEvent(code=BIRA))
+    qapp.processEvents()
+    sayfa.cash_button.click()
+    qapp.processEvents()
+    satis_id = services.sales.last_sale()["id"]
+    assert services.products.get(bira)["current_stock"] == 47
+
+    assert sayfa.undo_button.isEnabled(), "sepet boş: geri alma açık"
+    monkeypatch.setattr(modul, "ask_confirm", lambda *a, **k: True)
+
+    window._undo_last()                      # F8 yolu
+    qapp.processEvents()
+
+    assert services.sales.sale(satis_id)["is_reversed"] == 1
+    assert services.products.get(bira)["current_stock"] == 48, "stok iade edildi"
+
+
 # ===================== Panel kipe bağlı ==================================
 def test_sales_first_panelinde_kar_GOSTERILMEZ(window, qapp, services, bira):
     """Stoksuz satış serbest olduğu için maliyet tahminidir; kesin kâr yanıltır."""
