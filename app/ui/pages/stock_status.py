@@ -133,7 +133,11 @@ class StockStatusPage(Page):
 
     def _recompute(self) -> None:
         """Bakım işlemi: önbellekleri defterden yeniden kurar."""
+        from app.services.security_service import ProtectedAction
         from app.ui.dialogs.common_dialogs import ask_confirm, scanning_suspended, show_info
+
+        if not self.guard_require(ProtectedAction.STOK_YENIDEN_HESAPLA):
+            return
 
         with scanning_suspended(self.main_window.router):
             if not ask_confirm(

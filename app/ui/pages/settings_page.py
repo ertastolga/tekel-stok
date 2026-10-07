@@ -391,6 +391,10 @@ class SettingsPage(Page):
         self._fill_backups()
 
     def _restore(self) -> None:
+        from app.services.security_service import ProtectedAction
+
+        if not self.guard_require(ProtectedAction.GERI_YUKLE):
+            return
         oge = self.backup_list.currentItem()
         yol = oge.data(32) if oge is not None else None
         if yol is None:

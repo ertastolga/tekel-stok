@@ -302,13 +302,17 @@ class TouchDialog(QDialog):
         self.root = QVBoxLayout(self)
         self.root.setSpacing(10)
 
-    def add_buttons(self, accept_text: str = "Tamam", reject_text: str = "Vazgeç") -> None:
+    def add_buttons(
+        self, accept_text: str = "Tamam", reject_text: str = "Vazgeç", on_accept=None
+    ) -> None:
+        """Vazgeç / onay düğmeleri. ``on_accept`` verilirse onay düğmesi pencereyi
+        doğrudan kabul etmez; doğrulamayı yapan o işlev kabul eder."""
         satir = QHBoxLayout()
         self.reject_button = TouchKey(reject_text, width=160)
         self.reject_button.clicked.connect(self.reject)
         self.accept_button = TouchKey(accept_text, width=200)
         self.accept_button.setObjectName("primary")
-        self.accept_button.clicked.connect(self.accept)
+        self.accept_button.clicked.connect(on_accept or self.accept)
         satir.addWidget(self.reject_button)
         satir.addStretch(1)
         satir.addWidget(self.accept_button)

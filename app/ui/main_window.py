@@ -65,12 +65,18 @@ class MainWindow(QMainWindow):
         self.scanner = ScannerService(self)
         self.scanner.scanned.connect(self.router.dispatch)
 
+        from app.ui.manager_guard import ManagerGuard
+
+        #: PIN gerektiren eylemlerin tek kapısı (PIN kurulu değilse sormaz).
+        self.guard = ManagerGuard(services, self)
+
         self._build_ui()
         self._build_pages()
         self._build_shortcuts()
         self._restore_geometry()
 
         self.scanner.start()
+        self.guard.start()
         self.go_to(self._landing_key())
 
     # ===================== Kurulum =======================================
@@ -82,9 +88,20 @@ class MainWindow(QMainWindow):
 
         yatay.addWidget(self._build_nav())
 
+        from app.ui.widgets.pin_notice import PinResetNotice
+
+        icerik = QWidget()
+        dikey = QVBoxLayout(icerik)
+        dikey.setContentsMargins(0, 0, 0, 0)
+        dikey.setSpacing(0)
+        self.pin_notice = PinResetNotice()
+        self.pin_notice.setup_requested.connect(self._pin_setup_from_notice)
+        self.pin_notice.acknowledge_requested.connect(self._acknowledge_pin_notice)
+        dikey.addWidget(self.pin_notice)
         self.stack = QStackedWidget()
         self.stack.setObjectName("contentArea")
-        yatay.addWidget(self.stack, 1)
+        dikey.addWidget(self.stack, 1)
+        yatay.addWidget(icerik, 1)
 
         self.setCentralWidget(govde)
 
@@ -248,6 +265,11 @@ class MainWindow(QMainWindow):
             self.nav_group.checkedButton().setChecked(False)
             self.nav_group.setExclusive(True)
 
+        # Kasa sayfası gösterilince yönetici kilidi kapanır.
+        if getattr(sayfa, "kasa_sayfasi", False):
+            self.guard.lock()
+        self.refresh_pin_notice()
+
         # Okutmalar yalnızca ETKİN sayfaya gider.
         self.router.set_context(key if sayfa.accepts_scans else None)
         self.clear_status()
@@ -255,6 +277,25 @@ class MainWindow(QMainWindow):
             sayfa.on_activated()
         except Exception:
             log.exception("Sayfa açılırken hata: %s", key)
+
+    # ===================== PIN sıfırlama bildirimi =======================
+    def refresh_pin_notice(self) -> None:
+        sayfa = self.current_page()
+        try:
+            self.pin_notice.update_state(
+                self.services.security, bool(getattr(sayfa, "kasa_sayfasi", False))
+            )
+        except Exception:
+            log.exception("PIN bildirimi güncellenemedi")
+
+    def _pin_setup_from_notice(self) -> None:
+        self.guard.setup_or_change_pin(self)
+        self.refresh_pin_notice()
+
+    def _acknowledge_pin_notice(self) -> None:
+        if self.services.security.acknowledge_reset_notice():
+            self.show_status("PIN sıfırlama bildirimi onaylandı.", 4)
+        self.refresh_pin_notice()
 
     def current_page(self):
         return self.pages.get(self._current_key or "")
@@ -411,4 +452,5 @@ class MainWindow(QMainWindow):
                 log.exception("Sayfa kapanış hazırlığında hata: %s", anahtar)
         self._save_geometry()
         self.scanner.stop()
+        self.guard.stop()
         super().closeEvent(event)

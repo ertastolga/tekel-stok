@@ -29,6 +29,9 @@ class Page(QWidget):
     #: Sepetli Satış bunu asla açmaz: bir satış YALNIZCA açık bir ödeme
     #: eylemiyle (NAKİT / KART) tamamlanır, genel bir kısayolla asla.
     completes_with_shortcut = False
+    #: Kasa sayfası mı? (Gösterilince yönetici kilidi kapanır; PIN bildirimi
+    #: burada gösterilmez.)
+    kasa_sayfasi = False
 
     def __init__(self, services, main_window) -> None:
         super().__init__()
@@ -62,6 +65,11 @@ class Page(QWidget):
     # -- Kolaylıklar ------------------------------------------------------
     def notify(self, message: str, seconds: int = 4) -> None:
         self.main_window.show_status(message, seconds)
+
+    def guard_require(self, action: str) -> bool:
+        """PIN gerektirebilen eylemin kapısı (PIN yoksa daima ``True``)."""
+        guard = getattr(self.main_window, "guard", None)
+        return True if guard is None else guard.require(action, self)
 
     def data_changed(self) -> None:
         """Veri değişti: görünen sayfa kendini tazelesin."""

@@ -37,6 +37,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Pencere boyutu ve konumunu sıfırlar.",
     )
     ayristirici.add_argument(
+        "--yonetici-pin-sifirla", action="store_true",
+        help="Son çare: önce güvenlik yedeği alır, sonra yönetici PIN'ini siler.",
+    )
+    ayristirici.add_argument(
         "--surum-geri-donus", metavar="YEDEK",
         help="Önceki sürüme dönmek için veriyi güncelleme öncesi yedekle "
         "değiştirir (veri açılmaz ve güncellenmez).",
@@ -202,6 +206,11 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
+    if args.yonetici_pin_sifirla and not _pin_sifirla_calistir(services):
+        services.close()
+        tek.release()
+        return 1
+
     if args.reset_window:
         services.settings.set_many_quiet(
             {"window_geometry": "", "window_maximized": 0}
@@ -266,6 +275,48 @@ def main(argv: list[str] | None = None) -> int:
         _restart_process()
     log.info("Uygulama kapatıldı (kod %s)", cikis)
     return cikis
+
+
+def _pin_sifirla_calistir(services) -> bool:
+    """``--yonetici-pin-sifirla``: "SIFIRLA" yazılarak onay → yedek → PIN silinir.
+
+    Başarılıysa uygulama normal açılır; kırmızı bildirim, yeni PIN ve kurtarma
+    kodu belirlenip sahibi onaylayana dek Yönetim ekranlarında kalır.
+    """
+    from PySide6.QtWidgets import QDialog, QLabel, QMessageBox
+
+    from app.core.errors import DomainError
+    from app.services.security_service import ONAY_METNI
+    from app.ui.widgets.touch_input import TouchTextDialog
+
+    pencere = TouchTextDialog("Yönetici PIN'ini sıfırla", placeholder=ONAY_METNI)
+    aciklama = QLabel(
+        "Yönetici PIN'i ve kurtarma kodu silinecek. Önce otomatik bir güvenlik "
+        f"yedeği alınır. Onaylamak için {ONAY_METNI} yazın."
+    )
+    aciklama.setWordWrap(True)
+    pencere.root.insertWidget(0, aciklama)
+    if pencere.exec() != QDialog.DialogCode.Accepted:
+        log.info("PIN sıfırlama vazgeçildi")
+        return False
+    try:
+        yol = services.security.reset_with_backup(services.backup, pencere.value())
+    except DomainError as hata:
+        log.warning("PIN sıfırlanamadı: %s (%s)", hata.message, hata.detail)
+        _show_startup_error(hata.message, f"Kayıt dosyası: {config.log_file_path()}")
+        return False
+
+    bilgi = QMessageBox()
+    bilgi.setIcon(QMessageBox.Icon.Information)
+    bilgi.setWindowTitle(config.APP_NAME)
+    bilgi.setText("Yönetici PIN'i sıfırlandı.")
+    bilgi.setInformativeText(
+        f"Güvenlik yedeği: {yol}\nUygulama açılınca yeni bir PIN belirleyin."
+    )
+    bilgi.setStandardButtons(QMessageBox.StandardButton.Ok)
+    bilgi.button(QMessageBox.StandardButton.Ok).setText("Tamam")
+    bilgi.exec()
+    return True
 
 
 def _surum_geri_donus_calistir(yedek: str) -> int:

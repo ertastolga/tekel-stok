@@ -283,6 +283,11 @@ class ProductsPage(Page):
         if urun is None:
             return
         aktif = bool(urun["is_active"])
+        if aktif:
+            from app.services.security_service import ProtectedAction
+
+            if not self.guard_require(ProtectedAction.URUN_PASIF):
+                return
         with scanning_suspended(self.main_window.router):
             onay = ask_confirm(
                 self,

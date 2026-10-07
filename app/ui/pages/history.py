@@ -255,6 +255,10 @@ class HistoryPage(Page):
         if satis["is_reversed"]:
             show_error(self, "Bu satış daha önce geri alınmış.")
             return
+        from app.services.security_service import ProtectedAction
+
+        if not self.guard_require(ProtectedAction.GECMIS_SATIS_GERI_AL):
+            return
 
         with scanning_suspended(self.main_window.router):
             onay = ask_confirm(
@@ -278,6 +282,10 @@ class HistoryPage(Page):
         if index < 0 or index >= len(getattr(self, "_receipts", [])):
             return
         fis = self._receipts[index]
+        from app.services.security_service import ProtectedAction
+
+        if not self.guard_require(ProtectedAction.FIS_GERI_AL):
+            return
 
         # Servis KARAR VERİR, pencere yalnızca çizer.
         onizleme = self.services.purchases.reversal_preview(fis["id"])

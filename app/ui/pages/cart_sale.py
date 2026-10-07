@@ -82,6 +82,7 @@ class CartSalePage(Page):
     nav_key = "sepetli_satis"
     nav_group = "gunluk"
     accepts_scans = True
+    kasa_sayfasi = True
     # completes_with_shortcut TANIMLANMAZ: taban sınıftan False gelir.
     # Satış yalnızca açık NAKİT/KART eylemiyle tamamlanır.
 
@@ -582,6 +583,8 @@ class CartSalePage(Page):
         if son["is_reversed"]:
             self.banner.show_error("Bu satış daha önce geri alınmış.")
             return
+        if not self._gecmis_gun_kapisi(son):
+            return
 
         with scanning_suspended(self.main_window.router):
             onay = ask_confirm(
@@ -602,6 +605,16 @@ class CartSalePage(Page):
         sound.success()
         self.banner.show_warning("↩ SATIŞ GERİ ALINDI", "Ürünler stoğa geri eklendi.")
         self.main_window.refresh_today()
+
+    def _gecmis_gun_kapisi(self, satis) -> bool:
+        """Aynı iş gününün son satışı Kasa'da PIN'siz geri alınır; ÖNCEKİ bir
+        güne ait satışı geri almak geçmiş satış işlemidir (PIN gerekebilir)."""
+        from app.services.security_service import ProtectedAction
+
+        bugun = self.services.settings.calendar().today()
+        if satis["business_date"] == bugun:
+            return True
+        return self.guard_require(ProtectedAction.GECMIS_SATIS_GERI_AL)
 
     # ===================== Müşteri ekranı ================================
     def _publish_display(self) -> None:

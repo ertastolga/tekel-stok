@@ -29,6 +29,8 @@ AUTO_BACKUP_PREFIX = "otomatik_"
 MANUAL_BACKUP_PREFIX = "yedek_"
 PRE_RESTORE_PREFIX = "geri_yukleme_oncesi_"
 PRE_RESET_PREFIX = "sifirlama_oncesi_"
+#: ``--yonetici-pin-sifirla`` öncesi zorunlu yedek (ASLA otomatik silinmez).
+PRE_PIN_RESET_PREFIX = "pin_sifirlama_oncesi_"
 BACKUP_SUFFIX = ".db"
 
 MANUAL_BACKUP_DIR_NAME = "Tekel Stok Yedekleri"

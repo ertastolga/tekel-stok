@@ -52,6 +52,7 @@ log = logging.getLogger(__name__)
 class QuickSalePage(Page):
     nav_title = "⚡  Hızlı Satış"
     nav_key = "hizli_satis"
+    kasa_sayfasi = True
     nav_group = "gunluk"
     accepts_scans = True
 
@@ -297,6 +298,12 @@ class QuickSalePage(Page):
         if son["is_reversed"]:
             self._fail("Bu satış daha önce geri alınmış.")
             return
+        if son["business_date"] != self.services.settings.calendar().today():
+            # Önceki iş gününün satışı: geçmiş satış işlemi (PIN gerekebilir).
+            from app.services.security_service import ProtectedAction
+
+            if not self.guard_require(ProtectedAction.GECMIS_SATIS_GERI_AL):
+                return
 
         with scanning_suspended(self.main_window.router):
             onay = ask_confirm(

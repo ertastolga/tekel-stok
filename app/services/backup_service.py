@@ -80,6 +80,15 @@ class BackupService:
         hedef = self._new_path(self.manual_dir(), config.MANUAL_BACKUP_PREFIX)
         return self._backup_to(hedef)
 
+    def create_safety_backup(self, prefix: str) -> Path:
+        """Riskli bir işlemden ÖNCE zorunlu güvenlik yedeği (elle yedek klasörüne).
+
+        Bu yedekler otomatik olarak ASLA silinmez. Alınamazsa ``YedekHatasi``
+        yükselir ve çağıran işlemi YAPMAZ.
+        """
+        hedef = self._new_path(self.manual_dir(), prefix)
+        return self._backup_to(hedef)
+
     def create_auto(self) -> Path:
         hedef = self._new_path(self.auto_dir(), config.AUTO_BACKUP_PREFIX)
         yol = self._backup_to(hedef)
