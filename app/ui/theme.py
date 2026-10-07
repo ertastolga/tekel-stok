@@ -475,6 +475,22 @@ QPushButton#touchRemove:pressed {{ background: {t.danger_pressed_light}; }}
 /* ---- Rozetler ---- */
 #badge {{ border-radius: 6px; padding: 3px 10px; font-size: {m.FONT_SMALL_PT}pt; }}
 
+/* ---- Dokunmatik giriş takımı ---- */
+QPushButton#touchKey {{
+    background: {t.surface_alt}; border: 2px solid {t.border}; border-radius: 10px;
+    font-size: {m.FONT_SECTION_PT}pt; font-weight: 600; padding: 0px;
+}}
+QPushButton#touchKey:hover   {{ background: {t.step_hover}; border-color: {t.nav_active}; }}
+QPushButton#touchKey:pressed {{ background: {t.step_pressed}; }}
+QPushButton#touchKey:checked {{
+    background: {t.nav_active}; color: {t.on_accent}; border-color: {t.nav_active};
+}}
+#touchDisplay {{
+    background: {t.surface}; border: 2px solid {t.border}; border-radius: 8px;
+    font-size: {m.FONT_BARCODE_PT}pt; font-weight: 600; padding: 6px 12px;
+}}
+#touchDisplay[bos="evet"] {{ color: {t.text_muted}; font-weight: 400; }}
+
 /* ---- Diğer ---- */
 QScrollArea {{ border: none; background: transparent; }}
 QStatusBar {{ background: {t.surface}; border-top: 1px solid {t.border}; }}
