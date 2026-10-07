@@ -36,7 +36,45 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--reset-window", action="store_true",
         help="Pencere boyutu ve konumunu sıfırlar.",
     )
+    ayristirici.add_argument(
+        "--surum-geri-donus", metavar="YEDEK",
+        help="Önceki sürüme dönmek için veriyi güncelleme öncesi yedekle "
+        "değiştirir (veri açılmaz ve güncellenmez).",
+    )
     return ayristirici.parse_args(argv)
+
+
+def baslangic_hata_ayrintisi(hata) -> str:
+    """Açılış hatası için kullanıcıya gösterilecek YARDIMCI metin.
+
+    Uygulama açılamadığı için "Ayarlar" sayfasına ulaşılamaz; bu yüzden metin
+    ASLA uygulama içi bir menüye yönlendirmez. Yalnızca klasör yollarını ve
+    güvenli bir sonraki adımı söyler.
+    """
+    from app.core.errors import GocBasarisiz, GocOncesiYedekAlinamadi, YeniSurumVeritabani
+
+    satirlar: list[str] = []
+    if isinstance(hata, YeniSurumVeritabani):
+        satirlar.append("Güncel TekelStok sürümünü bu veri klasörüyle başlatın.")
+    elif isinstance(hata, GocOncesiYedekAlinamadi):
+        satirlar.append(
+            "Diskte yer açıp uygulamayı yeniden başlatın. Bu sırada önceki "
+            "sürümü kullanmaya devam edebilirsiniz."
+        )
+    elif isinstance(hata, GocBasarisiz):
+        satirlar.append(
+            "Lütfen kayıt dosyasını destek için saklayın. Önceki sürüm aynı "
+            "veriyle çalışmaya devam eder."
+        )
+    else:
+        satirlar.append(
+            "Başka bir TekelStok penceresi açıksa kapatıp yeniden deneyin. "
+            "Sorun sürerse yedek klasöründeki son yedeği saklayın ve destek isteyin."
+        )
+    satirlar.append(f"Veri klasörü: {config.data_dir()}")
+    satirlar.append(f"Yedek klasörü: {config.auto_backup_dir()}")
+    satirlar.append(f"Kayıt dosyası: {config.log_file_path()}")
+    return "\n".join(satirlar)
 
 
 def _configure_high_dpi() -> None:
@@ -141,21 +179,26 @@ def main(argv: list[str] | None = None) -> int:
     from app.core.errors import VeritabaniHatasi
     from app.services.container import create_services
 
+    if args.surum_geri_donus:
+        try:
+            return _surum_geri_donus_calistir(args.surum_geri_donus)
+        finally:
+            tek.release()
+
     try:
         services = create_services()
     except VeritabaniHatasi as hata:
         log.exception("Veritabanı açılamadı")
-        _show_startup_error(
-            hata.message,
-            "Ayarlar > Yedekleme bölümünden bir yedeği geri yükleyebilirsiniz.\n"
-            f"Veri klasörü: {config.data_dir()}",
-        )
+        tek.release()
+        _show_startup_error(hata.message, baslangic_hata_ayrintisi(hata))
         return 1
-    except Exception as hata:
+    except Exception:
         log.exception("Başlatma hatası")
+        tek.release()
         _show_startup_error(
             "Uygulama başlatılamadı.",
-            f"Veri klasörü: {config.data_dir()}\n{hata}",
+            f"Veri klasörü: {config.data_dir()}\n"
+            f"Kayıt dosyası: {config.log_file_path()}",
         )
         return 1
 
@@ -223,6 +266,66 @@ def main(argv: list[str] | None = None) -> int:
         _restart_process()
     log.info("Uygulama kapatıldı (kod %s)", cikis)
     return cikis
+
+
+def _surum_geri_donus_calistir(yedek: str) -> int:
+    """``--surum-geri-donus``: onay al, veriyi değiştir, sonucu söyle.
+
+    Veritabanı bu yolda HİÇ açılmaz (dolayısıyla güncellenmez de).
+    """
+    from PySide6.QtWidgets import QMessageBox
+
+    from app.core.errors import DomainError
+    from app.services.geri_donus import surum_geri_donus, yedek_semasini_dogrula
+
+    try:
+        yedek_semasini_dogrula(yedek)
+    except DomainError as hata:
+        log.warning("Sürüm geri dönüşü reddedildi: %s (%s)", hata.message, hata.detail)
+        _show_startup_error(hata.message, f"Seçilen dosya: {yedek}")
+        return 1
+
+    kutu = QMessageBox()
+    kutu.setIcon(QMessageBox.Icon.Warning)
+    kutu.setWindowTitle(config.APP_NAME)
+    kutu.setText(
+        "Mevcut veri, seçilen ESKİ sürüm yedeğiyle değiştirilecek.\n"
+        "Yedekten sonra yapılan satış ve stok kayıtları bu veride olmayacak."
+    )
+    kutu.setInformativeText(
+        f"Yedek: {yedek}\nVeri klasörü: {config.data_dir()}\n"
+        "Mevcut veri önce bir kopyaya alınır."
+    )
+    devam = kutu.addButton("Geri Dön", QMessageBox.ButtonRole.AcceptRole)
+    vazgec = kutu.addButton("Vazgeç", QMessageBox.ButtonRole.RejectRole)
+    kutu.setDefaultButton(vazgec)
+    kutu.exec()
+    if kutu.clickedButton() is not devam:
+        log.info("Sürüm geri dönüşü kullanıcı tarafından iptal edildi")
+        return 1
+
+    try:
+        sonuc = surum_geri_donus(yedek, config.db_path(), config.auto_backup_dir())
+    except DomainError:
+        log.exception("Sürüm geri dönüşü başarısız")
+        _show_startup_error(
+            "Geri dönüş tamamlanamadı. Verileriniz değiştirilmedi.",
+            f"Kayıt dosyası: {config.log_file_path()}",
+        )
+        return 1
+
+    bilgi = QMessageBox()
+    bilgi.setIcon(QMessageBox.Icon.Information)
+    bilgi.setWindowTitle(config.APP_NAME)
+    bilgi.setText("Geri dönüş tamamlandı. Şimdi önceki sürümü (V1.1) başlatın.")
+    bilgi.setInformativeText(
+        "Bu sürümü aynı veriyle yeniden açarsanız veri yeniden güncellenir.\n"
+        f"Geri dönüş öncesi verinin kopyası: {sonuc.onceki_veri_kopyasi or '-'}"
+    )
+    bilgi.setStandardButtons(QMessageBox.StandardButton.Ok)
+    bilgi.button(QMessageBox.StandardButton.Ok).setText("Tamam")
+    bilgi.exec()
+    return 0
 
 
 def _restart_process() -> None:

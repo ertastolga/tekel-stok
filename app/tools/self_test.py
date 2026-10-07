@@ -116,6 +116,8 @@ def run_self_test(report_path: str | None = None) -> int:
         finally:
             yeniden.close()
 
+        kontrol(*_yukseltme_denetimi(Path(gecici)))
+
         import logging
 
         logging.getLogger(__name__).info("Kendi kendini sinama tamamlandi")
@@ -134,6 +136,54 @@ def run_self_test(report_path: str | None = None) -> int:
     yaz(f"Sonuc: {'TUM KONTROLLER BASARILI' if not basarisiz else str(basarisiz) + ' KONTROL BASARISIZ'}")
     _write_report(report_path, satirlar)
     return 0 if not basarisiz else 1
+
+
+def _yukseltme_denetimi(kok: Path) -> tuple[str, bool, str]:
+    """En eski semadan (v1) guncel semaya yukseltme, ASCII olmayan bir klasorde.
+
+    Derlenmis exe'nin gocleri ve guncelleme oncesi yedegi GERCEKTEN
+    calistirabildigini kanitlar (yalnizca bos veritabani acmak yetmez).
+    """
+    from app.core import schema as schema_mod
+    from app.core.db import Database, hedef_sema_surumu, open_database
+    from app.services.container import build_services
+
+    hedef = hedef_sema_surumu()
+    ad = f"Surum yukseltme v1 -> v{hedef}"
+    klasor = kok / "yükseltme_ğüşİöç"
+    yedekler = klasor / "yedekler"
+    yol = klasor / "eski.db"
+    try:
+        klasor.mkdir(parents=True, exist_ok=True)
+        tum_gocler = schema_mod.MIGRATIONS
+        schema_mod.MIGRATIONS = tum_gocler[:1]
+        try:
+            eski = Database(yol).connect()
+            eski.seed_settings()
+            eski.close()
+        finally:
+            schema_mod.MIGRATIONS = tum_gocler
+
+        yeni = build_services(open_database(yol, pre_migration_backup_dirs=[yedekler]))
+        try:
+            surum = yeni.db.schema_version()
+            sorunlar = yeni.db.check_invariants(deep=True)
+            yedek = yeni.db.last_migration_backup
+            if hedef > 1:
+                if yedek is None or not yedek.exists():
+                    return ad, False, "guncelleme oncesi yedek yok"
+                bilgi = yeni.backup.inspect(yedek)
+                if bilgi.schema_version != 1:
+                    return ad, False, f"yedek semasi {bilgi.schema_version}"
+            elif yedek is not None:
+                return ad, False, "guncelleme yokken yedek alindi"
+        finally:
+            yeni.close()
+        if surum != hedef:
+            return ad, False, f"sema {surum}"
+        return ad, not sorunlar, "; ".join(sorunlar)
+    except Exception as hata:
+        return ad, False, repr(hata)
 
 
 def _write_report(path: str | None, satirlar: list[str]) -> None:

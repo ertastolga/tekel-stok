@@ -96,4 +96,14 @@ def build_services(db: Database) -> Services:
 
 def create_services() -> Services:
     """Üretim kurulumu: yolları ``config`` çözer — bunu yapan TEK yer burasıdır."""
-    return build_services(open_database(config.db_path()))
+    return build_services(
+        open_database(
+            config.db_path(),
+            # Güncelleme öncesi yedek önce otomatik yedek klasörüne, olmazsa
+            # elle yedek klasörüne yazılır (çekirdek ``config``'i bilmez).
+            pre_migration_backup_dirs=[
+                config.auto_backup_dir(),
+                config.default_manual_backup_dir(),
+            ],
+        )
+    )

@@ -26,6 +26,37 @@ class VeritabaniHatasi(DomainError):
         )
 
 
+class YeniSurumVeritabani(VeritabaniHatasi):
+    """Veri, bu uygulamadan DAHA YENİ bir sürümle oluşturulmuş."""
+
+    def __init__(self, detail: str = "") -> None:
+        super().__init__(
+            "Bu veri daha yeni bir TekelStok sürümüyle oluşturulmuş. "
+            "Lütfen güncel sürümü kullanın; verileriniz değiştirilmedi.",
+            detail,
+        )
+
+
+class GocOncesiYedekAlinamadi(VeritabaniHatasi):
+    """Güncelleme öncesi zorunlu yedek alınamadı; güncelleme YAPILMADI."""
+
+    def __init__(self, message: str, detail: str = "") -> None:
+        super().__init__(message, detail)
+
+
+class GocBasarisiz(VeritabaniHatasi):
+    """Güncelleme yarıda kaldı ve TAMAMEN geri alındı."""
+
+    def __init__(self, yedek_yolu: str | None = None, detail: str = "") -> None:
+        ek = f" Güncelleme öncesi yedek: {yedek_yolu}" if yedek_yolu else ""
+        super().__init__(
+            "Veritabanı güncellenemedi. Verileriniz değiştirilmedi; önceki sürümü "
+            "kullanmaya devam edebilirsiniz." + ek,
+            detail,
+        )
+        self.yedek_yolu = yedek_yolu
+
+
 class IslemTamamlanamadi(DomainError):
     """Çok adımlı bir işlem geri alındı: hiçbir veri değişmedi."""
 

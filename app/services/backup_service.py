@@ -32,9 +32,8 @@ from pathlib import Path
 
 from app import config
 from app.core.clock import local_now, now_utc
-from app.core.db import Database
+from app.core.db import Database, hedef_sema_surumu, salt_okunur_uri
 from app.core.errors import YedekHatasi, YedekOkunamadi
-from app.core.schema import SCHEMA_VERSION
 
 log = logging.getLogger(__name__)
 
@@ -208,7 +207,8 @@ class BackupService:
 
         conn = None
         try:
-            conn = sqlite3.connect(f"file:{kaynak}?mode=ro", uri=True)
+            # Yüzde-kodlu URI: klasör adında ?, #, % olsa da doğru dosya açılır.
+            conn = sqlite3.connect(salt_okunur_uri(kaynak), uri=True)
             conn.row_factory = sqlite3.Row
             if conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 raise YedekOkunamadi("bütünlük denetimi başarısız")
@@ -227,9 +227,10 @@ class BackupService:
                 "SELECT value FROM schema_meta WHERE key='schema_version'"
             ).fetchone()
             surum = int(surum_satiri["value"]) if surum_satiri else 0
-            if surum > SCHEMA_VERSION:
+            hedef = hedef_sema_surumu()
+            if surum > hedef:
                 raise YedekOkunamadi(
-                    f"yedek daha yeni bir sürüme ait: {surum} > {SCHEMA_VERSION}"
+                    f"yedek daha yeni bir sürüme ait: {surum} > {hedef}"
                 )
 
             urun = conn.execute("SELECT COUNT(*) FROM products").fetchone()[0]

@@ -42,7 +42,13 @@ def test_goc_ikinci_acilista_tekrar_calismaz(db, reopen):
 def test_yeni_goc_eski_veritabanini_yukseltir_ve_VERIYI_KORUR(
     db_file, monkeypatch
 ):
-    """Şema v1 verisi, v2 göçünden sonra OLDUĞU GİBİ durmalıdır."""
+    """Güncel şemadaki veri, bir SONRAKİ göçten sonra OLDUĞU GİBİ durmalıdır.
+
+    (V1.1'de bu test sabit "v2" kullanıyordu; V1.2 gerçek göçler eklediği için
+    hedef artık ``SCHEMA_VERSION + 1``'dir — koruma aynı, ek olarak güncelleme
+    öncesi yedek de doğrulanır.)
+    """
+    sonraki = SCHEMA_VERSION + 1
     db = open_database(db_file)
     with db.transaction() as conn:
         conn.execute(
@@ -62,14 +68,15 @@ def test_yeni_goc_eski_veritabanini_yukseltir_ve_VERIYI_KORUR(
         schema_mod, "MIGRATIONS",
         [
             *schema_mod.MIGRATIONS,
-            (2, ["ALTER TABLE products ADD COLUMN raf_notu TEXT", v2_backfill]),
+            (sonraki, ["ALTER TABLE products ADD COLUMN raf_notu TEXT", v2_backfill]),
         ],
     )
-    monkeypatch.setattr(schema_mod, "SCHEMA_VERSION", 2)
+    monkeypatch.setattr(schema_mod, "SCHEMA_VERSION", sonraki)
 
     yeni = open_database(db_file)
     try:
-        assert yeni.schema_version() == 2
+        assert yeni.schema_version() == sonraki
+        assert yeni.last_migration_backup is not None, "güncelleme öncesi yedek"
         satir = yeni.query_one("SELECT * FROM products WHERE id = ?", (urun_id,))
         assert satir["name"] == "Tuborg Gold 50 cl", "eski veri KORUNDU"
         assert satir["sale_price"] == 8000
@@ -80,7 +87,13 @@ def test_yeni_goc_eski_veritabanini_yukseltir_ve_VERIYI_KORUR(
 
 
 def test_basarisiz_goc_semayi_yarim_birakmaz(db_file, monkeypatch):
-    """Göç ortada patlarsa sürüm damgası ilerlemez; veritabanı tutarlı kalır."""
+    """Göç ortada patlarsa sürüm damgası ilerlemez; veritabanı tutarlı kalır.
+
+    V1.2'de daha GÜÇLÜ: ham ``sqlite3`` hatası kullanıcıya sızmaz (sebep olarak
+    zincirlenir), bağlantı kapanır ve dosya kilitli kalmaz.
+    """
+    from app.core.errors import VeritabaniHatasi
+
     open_database(db_file).close()
 
     def patlayan(conn: sqlite3.Connection) -> None:
@@ -90,18 +103,25 @@ def test_basarisiz_goc_semayi_yarim_birakmaz(db_file, monkeypatch):
         schema_mod, "MIGRATIONS",
         [
             *schema_mod.MIGRATIONS,
-            (2, ["ALTER TABLE products ADD COLUMN yeni_sutun TEXT", patlayan]),
+            (SCHEMA_VERSION + 1,
+             ["ALTER TABLE products ADD COLUMN yeni_sutun TEXT", patlayan]),
         ],
     )
 
-    with pytest.raises(sqlite3.OperationalError):
-        open_database(db_file)
+    acilan = Database(db_file)
+    with pytest.raises(VeritabaniHatasi) as bilgi:
+        acilan.connect()
+    assert isinstance(bilgi.value.__cause__, sqlite3.OperationalError)
+    assert not acilan.is_open, "bağlantı kapatıldı"
+    tasinan = db_file.with_name("tasindi.db")
+    db_file.rename(tasinan)                      # Windows: açık dosya taşınamaz
+    tasinan.rename(db_file)
 
     db = Database(db_file)
     db._conn = sqlite3.connect(str(db_file))
     db._conn.row_factory = sqlite3.Row
     try:
-        assert db.schema_version() == 1, "sürüm damgası ilerlemedi"
+        assert db.schema_version() == SCHEMA_VERSION, "sürüm damgası ilerlemedi"
         sutunlar = {
             satir["name"]
             for satir in db.query("PRAGMA table_info(products)")
@@ -123,7 +143,8 @@ def test_yabanci_anahtar_denetimi_gocte_calisir(db_file, monkeypatch):
         )
 
     monkeypatch.setattr(
-        schema_mod, "MIGRATIONS", [*schema_mod.MIGRATIONS, (2, [bozan])]
+        schema_mod, "MIGRATIONS",
+        [*schema_mod.MIGRATIONS, (SCHEMA_VERSION + 1, [bozan])],
     )
     from app.core.errors import VeritabaniHatasi
 

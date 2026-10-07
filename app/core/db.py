@@ -16,6 +16,7 @@ Tasarım kararları
 from __future__ import annotations
 
 import logging
+import shutil
 import sqlite3
 import threading
 from collections.abc import Iterable, Iterator, Sequence
@@ -26,9 +27,13 @@ from typing import Any
 
 from app.core import schema as schema_mod
 from app.core.clock import local_now, now_utc
-from app.core.errors import VeritabaniHatasi
+from app.core.errors import (
+    GocBasarisiz,
+    GocOncesiYedekAlinamadi,
+    VeritabaniHatasi,
+    YeniSurumVeritabani,
+)
 from app.core.quantity import V1_BASE_UNIT, V1_MEASURE_KIND, V1_PRICING_BASIS
-from app.core.schema import SCHEMA_VERSION
 from app.core.tr import DATE_FORMAT
 
 log = logging.getLogger(__name__)
@@ -37,16 +42,54 @@ log = logging.getLogger(__name__)
 #: satıra çıkacağı için açılışta tüm tarih taranmaz.
 SHALLOW_WINDOW_DAYS = 30
 
+#: Güncelleme öncesi yedek için boş alan payı: (veri + WAL) × 1,2 + 50 MB.
+GOC_ALAN_CARPANI = 1.2
+GOC_ALAN_PAYI = 50 * 1024 * 1024
+
+GOC_ONCESI_ONEKI = "guncelleme_oncesi_"
+
+
+def hedef_sema_surumu() -> int:
+    """Kayıtlı en yüksek göç sürümü — ÇAĞRI ANINDA okunur (testler yamalayabilir)."""
+    return max(surum for surum, _ in schema_mod.MIGRATIONS)
+
+
+def salt_okunur_uri(path: str | Path) -> str:
+    """SQLite için yüzde-kodlu, salt okunur dosya URI'si.
+
+    Klasör adında ``?``, ``#``, ``%`` ya da Türkçe karakter olsa bile doğru açılır.
+    """
+    return Path(path).resolve().as_uri() + "?mode=ro"
+
+
+def _var_olan_ust(yol: Path) -> Path:
+    while not yol.exists() and yol.parent != yol:
+        yol = yol.parent
+    return yol
+
 
 class Database:
     """Tek bir SQLite dosyasının sahibi."""
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(
+        self,
+        path: str | Path,
+        pre_migration_backup_dirs: Sequence[str | Path] | None = None,
+    ) -> None:
         self.path = Path(path)
         self._conn: sqlite3.Connection | None = None
         self._lock = threading.RLock()
         self._depth = 0
         self._changes_at_begin = 0
+        #: Güncelleme öncesi yedeğin yazılabileceği klasörler, öncelik sırasıyla.
+        #: Verilmezse veritabanının yanındaki ``backups`` klasörü kullanılır.
+        self.pre_migration_backup_dirs: list[Path] = [
+            Path(p) for p in (pre_migration_backup_dirs or [])
+        ] or [self.path.parent / "backups"]
+        #: Son başarılı güncelleme öncesi yedeğin yolu (yoksa None).
+        self.last_migration_backup: Path | None = None
+        #: Göçten ÖNCE zaten var olan yabancı anahtar ihlalleri (bilgi amaçlı).
+        self.preexisting_fk_violations: list[tuple] = []
 
     # -- Yaşam döngüsü ----------------------------------------------------
     @property
@@ -60,6 +103,13 @@ class Database:
         return self._conn
 
     def connect(self) -> "Database":
+        """Açar, gerekirse GÜVENLE günceller.
+
+        Sıra: pragmalar → yeni sürüm koruması → (gerekiyorsa) güncelleme öncesi
+        yedek → TÜM bekleyen göçler TEK işlemde → yabancı anahtarlar açık.
+        Herhangi bir adım başarısız olursa bağlantı KAPATILIR (Windows'ta dosya
+        kilitli kalmaz) ve dosya başlangıç sürümünde kalır.
+        """
         if self._conn is not None:
             return self
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -74,10 +124,111 @@ class Database:
             raise VeritabaniHatasi(detail=str(exc)) from exc
         conn.row_factory = sqlite3.Row
         self._conn = conn
-        self._apply_pragmas(foreign_keys=False)
-        self.migrate()
-        self.conn.execute("PRAGMA foreign_keys = ON")
+        asama = "acilis"
+        try:
+            self._apply_pragmas(foreign_keys=False)
+            mevcut = self.schema_version()
+            hedef = hedef_sema_surumu()
+            if mevcut > hedef:
+                raise YeniSurumVeritabani(detail=f"veri {mevcut} > uygulama {hedef}")
+            if 0 < mevcut < hedef:
+                self._goc_oncesi_yedek(mevcut, hedef)
+            asama = "goc"
+            self.migrate()
+            asama = "son"
+            self.conn.execute("PRAGMA foreign_keys = ON")
+        except VeritabaniHatasi as exc:
+            self._kapat_zorla()
+            if asama == "goc" and not isinstance(exc, GocBasarisiz):
+                raise GocBasarisiz(self._yedek_metni(), exc.detail or exc.message) from exc
+            raise
+        except Exception as exc:
+            self._kapat_zorla()
+            if asama == "goc":
+                raise GocBasarisiz(self._yedek_metni(), str(exc)) from exc
+            raise VeritabaniHatasi(detail=str(exc)) from exc
         return self
+
+    def _yedek_metni(self) -> str | None:
+        return str(self.last_migration_backup) if self.last_migration_backup else None
+
+    def _kapat_zorla(self) -> None:
+        """Hata sonrası bağlantıyı koşulsuz kapatır (dosya kilidi kalkar)."""
+        with self._lock:
+            if self._conn is not None:
+                try:
+                    self._conn.close()
+                except sqlite3.Error:
+                    log.warning("Bağlantı kapatılamadı", exc_info=True)
+            self._conn = None
+            self._depth = 0
+
+    # -- Güncelleme öncesi yedek ---------------------------------------------
+    def _goc_oncesi_yedek(self, mevcut: int, hedef: int) -> Path:
+        """Göçten ÖNCE doğrulanmış bir yedek alır; alınamazsa göç YAPILMAZ."""
+        gerekli = self._gereken_alan()
+        damga = local_now().strftime("%Y%m%d_%H%M%S")
+        ad = f"{GOC_ONCESI_ONEKI}v{mevcut}_v{hedef}_{damga}.db"
+        nedenler: list[str] = []
+        for klasor in self.pre_migration_backup_dirs:
+            try:
+                bos = shutil.disk_usage(_var_olan_ust(klasor)).free
+            except OSError as exc:
+                nedenler.append(f"{klasor}: {exc}")
+                continue
+            if bos < gerekli:
+                nedenler.append(
+                    f"{klasor}: {gerekli // 2**20} MB gerekli, {bos // 2**20} MB boş"
+                )
+                continue
+            hedef_yol = klasor / ad
+            try:
+                self.backup_to(hedef_yol)
+                self._yedegi_dogrula(hedef_yol, mevcut)
+            except Exception as exc:     # yazılamadı ya da doğrulanamadı
+                nedenler.append(f"{klasor}: {exc}")
+                hedef_yol.unlink(missing_ok=True)
+                continue
+            self.last_migration_backup = hedef_yol
+            log.info("Güncelleme öncesi yedek alındı: %s", hedef_yol)
+            return hedef_yol
+
+        yer = self.pre_migration_backup_dirs[0]
+        try:
+            bos_mb = shutil.disk_usage(_var_olan_ust(yer)).free // 2**20
+        except OSError:
+            bos_mb = 0
+        surucu = _var_olan_ust(yer).anchor or str(yer)
+        raise GocOncesiYedekAlinamadi(
+            "Güncelleme öncesi yedek alınamadı; veritabanı güncellenmedi ve "
+            "verileriniz değiştirilmedi. "
+            f"{surucu} sürücüsünde en az {gerekli // 2**20} MB boş alan gerekli "
+            f"(şu an {bos_mb} MB) ve yedek klasörü yazılabilir olmalı.",
+            "; ".join(nedenler),
+        )
+
+    def _gereken_alan(self) -> int:
+        boyut = 0
+        for ek in ("", "-wal"):
+            dosya = Path(str(self.path) + ek)
+            if dosya.exists():
+                boyut += dosya.stat().st_size
+        return int(boyut * GOC_ALAN_CARPANI) + GOC_ALAN_PAYI
+
+    @staticmethod
+    def _yedegi_dogrula(yol: Path, beklenen_surum: int) -> None:
+        kontrol = sqlite3.connect(salt_okunur_uri(yol), uri=True)
+        try:
+            sonuc = kontrol.execute("PRAGMA quick_check").fetchone()[0]
+            if sonuc != "ok":
+                raise VeritabaniHatasi(detail=f"yedek doğrulanamadı: {sonuc}")
+            surum = kontrol.execute(
+                "SELECT value FROM schema_meta WHERE key='schema_version'"
+            ).fetchone()
+            if surum is None or int(surum[0]) != beklenen_surum:
+                raise VeritabaniHatasi(detail="yedeğin şema sürümü beklenmedik")
+        finally:
+            kontrol.close()
 
     def _apply_pragmas(self, foreign_keys: bool = True) -> None:
         cur = self.conn
@@ -210,13 +361,27 @@ class Database:
             return 0
 
     def migrate(self) -> int:
-        """Bekleyen göçleri uygular. Kullanıcıya asla "veritabanını sil" denmez."""
+        """Bekleyen göçleri uygular. Kullanıcıya asla "veritabanını sil" denmez.
+
+        TÜM bekleyen sürümler TEK bir işlemde uygulanır: v1→v4 yükseltmesi v3'te
+        patlarsa dosya v1'de kalır (yarım yükseltilmiş bir veritabanı oluşmaz).
+
+        Yabancı anahtar denetimi her sürümden sonra yapılır ama yalnızca YENİ
+        ihlaller göçü durdurur. Göçten önce zaten var olan (eski araçlardan
+        kalmış) ihlaller ``preexisting_fk_violations`` içinde bildirilir; aksi
+        hâlde tek bir eski kayıt uygulamanın hiç açılmamasına yol açardı.
+        """
         current = self.schema_version()
-        applied = 0
-        for version, statements in schema_mod.MIGRATIONS:
-            if version <= current:
-                continue
-            with self.transaction(mutating=False) as conn:
+        bekleyen = [
+            (version, statements)
+            for version, statements in schema_mod.MIGRATIONS
+            if version > current
+        ]
+        if not bekleyen:
+            return 0
+        temel = {tuple(r) for r in self.conn.execute("PRAGMA foreign_key_check")}
+        with self.transaction(mutating=False) as conn:
+            for version, statements in bekleyen:
                 for statement in statements:
                     # Bir göç adımı ya SQL metnidir ya da veri dönüştüren bir
                     # fonksiyondur (yeni sütunun geçmiş satırlar için
@@ -228,11 +393,15 @@ class Database:
 
                 # Tablo yeniden inşası yapan bir göç, yabancı anahtarları
                 # sessizce koparabilir; commit'ten ÖNCE denetlenir.
-                broken = conn.execute("PRAGMA foreign_key_check").fetchall()
-                if broken:
+                yeni_ihlal = [
+                    tuple(r)
+                    for r in conn.execute("PRAGMA foreign_key_check").fetchall()
+                    if tuple(r) not in temel
+                ]
+                if yeni_ihlal:
                     raise VeritabaniHatasi(
                         "Veritabanı güncellemesi tamamlanamadı.",
-                        f"foreign_key_check: {broken[:5]}",
+                        f"foreign_key_check (v{version}): {yeni_ihlal[:5]}",
                     )
 
                 conn.execute(
@@ -240,9 +409,12 @@ class Database:
                     "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                     (str(version),),
                 )
-            applied += 1
+        self.preexisting_fk_violations = sorted(temel)
+        if temel:
+            log.warning("Göç öncesi var olan yabancı anahtar ihlalleri: %s", sorted(temel)[:5])
+        for version, _ in bekleyen:
             log.info("Şema %s sürümüne yükseltildi", version)
-        return applied
+        return len(bekleyen)
 
     def seed_settings(self) -> None:
         """Yeni sürümde eklenen ayar anahtarlarını tamamlar."""
@@ -281,14 +453,23 @@ class Database:
         destination = Path(destination)
         destination.parent.mkdir(parents=True, exist_ok=True)
         temp = destination.with_suffix(destination.suffix + ".tmp")
-        with self._lock:
-            target = sqlite3.connect(str(temp))
-            try:
-                self.conn.backup(target)
-                target.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-            finally:
-                target.close()
-        temp.replace(destination)
+        try:
+            with self._lock:
+                target = sqlite3.connect(str(temp))
+                try:
+                    self.conn.backup(target)
+                    target.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                finally:
+                    target.close()
+            temp.replace(destination)
+        except BaseException:
+            # Yarım kalmış geçici dosya diskte yer kaplamaya devam etmesin.
+            for artik in (temp, Path(str(temp) + "-wal"), Path(str(temp) + "-shm")):
+                try:
+                    artik.unlink(missing_ok=True)
+                except OSError:
+                    log.warning("Geçici yedek silinemedi: %s", artik)
+            raise
         return destination
 
     # -- Önbellek yeniden hesaplama ---------------------------------------
@@ -646,8 +827,12 @@ class Database:
         return notes
 
 
-def open_database(path: str | Path) -> Database:
-    """Veritabanını açar, göçleri uygular ve eksik ayarları tamamlar."""
-    db = Database(path).connect()
+def open_database(
+    path: str | Path,
+    pre_migration_backup_dirs: Sequence[str | Path] | None = None,
+) -> Database:
+    """Veritabanını açar, göçleri (güncelleme öncesi yedekle) uygular ve eksik
+    ayarları tamamlar."""
+    db = Database(path, pre_migration_backup_dirs).connect()
     db.seed_settings()
     return db
