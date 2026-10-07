@@ -28,23 +28,21 @@ from app.ui import theme
 
 
 @contextmanager
-def scanning_suspended(router, on_blocked=None):
+def scanning_suspended(router, on_blocked=None, reason: str = "karar penceresi"):
     """Karar penceresi süresince okutmayı askıya alır.
 
-    Çıkışta kuyruk BOŞTUR: gecikmiş sürpriz satış oluşmaz.
+    Kendi JETONUNU alır ve yalnızca onu bırakır: iç içe pencerelerde içteki
+    kapanınca okutma açılmaz, dıştaki hâlâ açıktır. Son askı kalkınca kuyruk
+    BOŞTUR: gecikmiş sürpriz satış oluşmaz.
     """
     if router is None:
         yield
         return
-    onceki = router.on_blocked
-    router.suspend("karar penceresi")
-    if on_blocked is not None:
-        router.on_blocked = on_blocked
+    jeton = router.suspend(reason, on_blocked)
     try:
         yield
     finally:
-        router.on_blocked = onceki
-        router.resume()
+        router.resume(jeton)
 
 
 def show_error(parent: QWidget | None, message: str, detail: str = "") -> None:

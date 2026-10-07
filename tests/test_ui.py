@@ -202,6 +202,32 @@ def test_okutma_yalnizca_etkin_sayfaya_gider(window, qapp, services, bira):
     assert services.db.scalar("SELECT COUNT(*) FROM sales") == 0
 
 
+def test_ic_ice_karar_pencerelerinde_icteki_kapaninca_okutma_acilmaz(
+    window, qapp, services, bira
+):
+    """V1.1'de içteki pencere kapanınca okutma AÇILIYORDU (dıştaki hâlâ açıkken).
+
+    Bir ürün tanımlama penceresinin içinden açılan onay sorusu buna örnektir:
+    onay kapanır kapanmaz okutulan barkod, dıştaki pencere açıkken SATIŞ
+    oluştururdu.
+    """
+    from app.ui.dialogs.common_dialogs import scanning_suspended
+
+    window.go_to("hizli_satis")
+    varsayilan = window.router.on_blocked
+    disaridaki = []
+    with scanning_suspended(window.router, disaridaki.append):
+        with scanning_suspended(window.router):
+            pass
+        assert window.router.is_suspended, "dıştaki pencere hâlâ açık"
+        window.router.dispatch(ScanEvent(code=BIRA))
+        qapp.processEvents()
+        assert services.db.scalar("SELECT COUNT(*) FROM sales") == 0
+        assert len(disaridaki) == 1, "engellenen okutmayı açık pencere bildirdi"
+    assert not window.router.is_suspended
+    assert window.router.on_blocked is varsayilan, "varsayılan bildirimci yerinde"
+
+
 def test_karar_penceresi_acikken_satis_olmaz(window, qapp, services, bira):
     window.go_to("hizli_satis")
     window.router.suspend("test penceresi")

@@ -223,6 +223,117 @@ def test_isleyici_pencere_acarsa_kalan_kuyruk_islenmez(router, saat):
     assert router.is_suspended
 
 
+# ===================== Jetonlu askı (V1.2 M1c) ============================
+class _SayanKoruma:
+    """Her okutmayı geçiren, sıfırlamaları sayan sahte çift-okuma koruması."""
+
+    def __init__(self) -> None:
+        self.sifirlama = 0
+
+    def check(self, code, context) -> bool:
+        return True
+
+    def reset(self) -> None:
+        self.sifirlama += 1
+
+
+def test_ic_ice_askida_icteki_kapaninca_okutma_ACILMAZ(router, saat):
+    gelenler = []
+    router.register("satis", gelenler.append)
+    router.set_context("satis")
+
+    dis = router.suspend("ürün tanımlama penceresi")
+    ic = router.suspend("onay sorusu")
+    router.resume(ic)
+    assert router.is_suspended, "dıştaki pencere hâlâ açık"
+    saat.advance(300)
+    assert router.dispatch(_olay("ARADA")) is ScanOutcome.BLOCKED
+    router.resume(dis)
+    assert router.mode is RouterMode.ACTIVE
+    saat.advance(300)
+    router.dispatch(_olay("SONRA"))
+    assert [e.code for e in gelenler] == ["SONRA"]
+
+
+def test_jetonlar_sirasiz_birakilabilir(router):
+    birinci = router.suspend("katman")
+    ikinci = router.suspend("pencere")
+    router.resume(birinci)                      # önce ESKİSİ kapanıyor
+    assert router.is_suspended and router.suspension_count == 1
+    router.resume(ikinci)
+    assert not router.is_suspended
+
+
+def test_ayni_jetonla_ikinci_resume_baskasinin_askisini_birakmaz(router):
+    birinci = router.suspend("katman")
+    ikinci = router.suspend("pencere")
+    router.resume(ikinci)
+    router.resume(ikinci)                       # tekrar: etkisiz
+    assert router.is_suspended, "katmanın askısı korunur"
+    router.resume(birinci)
+    router.resume(birinci)
+    assert not router.is_suspended
+
+
+def test_en_yeni_jetonun_bildirimcisi_kazanir(router, saat):
+    varsayilan, katman, pencere = [], [], []
+    router.on_blocked = varsayilan.append
+    router.register("satis", lambda e: None)
+    router.set_context("satis")
+
+    k = router.suspend("katman", katman.append)
+    router.dispatch(_olay("A"))
+    p = router.suspend("bildirimcisiz pencere")
+    saat.advance(300)
+    router.dispatch(_olay("B"))                 # en yeninin bildirimcisi yok
+    router.resume(p)
+    saat.advance(300)
+    router.dispatch(_olay("C"))                 # katman yeniden en yeni
+    router.resume(k)
+
+    assert [e.code for e in katman] == ["A", "C"]
+    assert [e.code for e in varsayilan] == ["B"]
+    assert router.on_blocked is not None and pencere == []
+
+
+def test_kuyruk_ve_koruma_yalnizca_son_jetonda_sifirlanir():
+    koruma = _SayanKoruma()
+    router = ScanRouter(guard=koruma)
+    a = router.suspend("a")
+    b = router.suspend("b")
+    router.resume(a)
+    assert koruma.sifirlama == 0
+    router.resume(b)
+    assert koruma.sifirlama == 1
+    router.resume(b)                            # etkisiz tekrar
+    assert koruma.sifirlama == 1
+
+
+def test_isleyicinin_actigi_askida_kalanlar_en_yeni_bildirimciye_gider(router, saat):
+    engellenen = []
+
+    def isleyici(event):
+        if event.code == "BILINMEYEN":
+            router.dispatch(_olay("ARKADAN_GELEN"))
+            router.suspend("ürün tanımlama", engellenen.append)
+
+    router.register("satis", isleyici)
+    router.set_context("satis")
+    router.dispatch(_olay("BILINMEYEN"))
+    assert [e.code for e in engellenen] == ["ARKADAN_GELEN"]
+
+
+def test_jetonsuz_eski_cagri_cift_olarak_calisir(router):
+    router.suspend()
+    router.suspend()
+    router.resume()
+    assert router.is_suspended
+    router.resume()
+    assert router.mode is RouterMode.ACTIVE
+    router.resume()                             # fazladan çağrı zararsız
+    assert router.mode is RouterMode.ACTIVE
+
+
 def test_engellenen_okutmalar_tanilamada_gorunur(router, saat):
     router.register("satis", lambda e: None)
     router.set_context("satis")

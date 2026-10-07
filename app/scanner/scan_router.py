@@ -24,6 +24,18 @@ yalnızca klavye olaylarını buraya besler.
 
 Her iki kipte de değişmez aynıdır: **hiçbir okutma sessizce kaybolmaz** — ya
 işlenir, ya da kullanıcıya anında bildirilerek reddedilir.
+
+Askıya alma JETONLUDUR (V1.2)
+-----------------------------
+
+``suspend()`` bir jeton döner; ``resume(jeton)`` yalnızca O jetonu bırakır.
+Yönlendirici ancak HİÇ jeton kalmadığında ``ACTIVE`` olur. Böylece iç içe ya da
+sırası karışık açılıp kapanan pencereler (bir karar penceresinin içinden açılan
+onay, kapanan bir katman...) okutmayı erken AÇAMAZ. ``resume`` aynı jetonla
+ikinci kez çağrılırsa hiçbir şey olmaz. Engellenen okutmayı EN YENİ jetonun
+bildirimcisi karşılar; onun bildirimcisi yoksa varsayılan ``on_blocked``.
+Jetonsuz eski çağrı (``suspend()`` / ``resume()``) çift olarak çalışmaya devam
+eder: jetonsuz ``resume()`` en son alınan jetonu bırakır.
 """
 from __future__ import annotations
 
@@ -50,11 +62,26 @@ class ScanOutcome(Enum):
     NO_HANDLER = "NO_HANDLER"
 
 
+class SuspensionToken:
+    """Bir askıya alma isteğinin kimliği (yalnızca ``resume`` için)."""
+
+    __slots__ = ("reason", "on_blocked", "_sira")
+
+    def __init__(self, sira: int, reason: str, on_blocked) -> None:
+        self._sira = sira
+        self.reason = reason
+        self.on_blocked: Callable[[ScanEvent], None] | None = on_blocked
+
+    def __repr__(self) -> str:                                   # pragma: no cover
+        return f"SuspensionToken({self._sira}, {self.reason!r})"
+
+
 class ScanRouter:
     def __init__(self, guard=None) -> None:
         self._handlers: dict[str, Callable[[ScanEvent], None]] = {}
         self._context: str | None = None
-        self._mode = RouterMode.ACTIVE
+        self._tokens: list[SuspensionToken] = []
+        self._sonraki_jeton = 0
         self._queue: deque[ScanEvent] = deque()
         self._dispatching = False
         self._seen: set[int] = set()
@@ -88,24 +115,64 @@ class ScanRouter:
 
     @property
     def mode(self) -> RouterMode:
-        return self._mode
+        return RouterMode.SUSPENDED if self._tokens else RouterMode.ACTIVE
 
     # ===================== Askıya alma ===================================
-    def suspend(self, reason: str = "") -> None:
-        """Karar penceresi açıldı: iş işleme durur, kuyruk BİRİKTİRMEZ."""
-        self._mode = RouterMode.SUSPENDED
-        log.debug("Okutma askıya alındı: %s", reason)
+    def suspend(
+        self,
+        reason: str = "",
+        on_blocked: Callable[[ScanEvent], None] | None = None,
+    ) -> SuspensionToken:
+        """Karar penceresi açıldı: iş işleme durur, kuyruk BİRİKTİRMEZ.
 
-    def resume(self) -> None:
-        """Karar penceresi kapandı. Kuyruk BOŞTUR — gecikmiş satış olmaz."""
-        self._mode = RouterMode.ACTIVE
+        Dönen jeton ``resume`` ile bırakılır. ``on_blocked`` verilirse bu jeton
+        en yeni jeton olduğu sürece engellenen okutmaları o karşılar.
+        """
+        self._sonraki_jeton += 1
+        jeton = SuspensionToken(self._sonraki_jeton, reason, on_blocked)
+        self._tokens.append(jeton)
+        log.debug("Okutma askıya alındı: %s (%d jeton)", reason, len(self._tokens))
+        return jeton
+
+    def resume(self, token: SuspensionToken | None = None) -> None:
+        """Bir askıya almayı bırakır; SON jeton bırakılınca okutma açılır.
+
+        Açılışta kuyruk BOŞTUR — gecikmiş satış olmaz. Aynı jetonla tekrar
+        çağrı etkisizdir (bir başkasının askısını bırakmaz).
+        """
+        if token is None:
+            if not self._tokens:
+                return
+            self._tokens.pop()
+        else:
+            if token not in self._tokens:
+                return
+            self._tokens.remove(token)
+        if self._tokens:
+            return
         self._queue.clear()
         if self._guard is not None:
             self._guard.reset()
 
     @property
     def is_suspended(self) -> bool:
-        return self._mode is RouterMode.SUSPENDED
+        return bool(self._tokens)
+
+    @property
+    def suspension_count(self) -> int:
+        """Açık askı jetonu sayısı (tanılama ve testler için)."""
+        return len(self._tokens)
+
+    def _blocked_handler(self) -> Callable[[ScanEvent], None] | None:
+        if self._tokens and self._tokens[-1].on_blocked is not None:
+            return self._tokens[-1].on_blocked
+        return self.on_blocked
+
+    def _bildir_engellendi(self, event: ScanEvent) -> None:
+        self._record(event, ScanOutcome.BLOCKED)
+        isleyici = self._blocked_handler()
+        if isleyici is not None:
+            isleyici(event)
 
     # ===================== Teslim ========================================
     def dispatch(self, event: ScanEvent) -> ScanOutcome:
@@ -119,10 +186,8 @@ class ScanRouter:
         if len(self._seen) > 1000:
             self._seen = set(list(self._seen)[-500:])
 
-        if self._mode is RouterMode.SUSPENDED:
-            self._record(event, ScanOutcome.BLOCKED)
-            if self.on_blocked is not None:
-                self.on_blocked(event)
+        if self._tokens:
+            self._bildir_engellendi(event)
             return ScanOutcome.BLOCKED
 
         if self._context is None or self._context not in self._handlers:
@@ -148,14 +213,13 @@ class ScanRouter:
         self._dispatching = True
         try:
             while self._queue:
-                if self._mode is RouterMode.SUSPENDED:
+                if self._tokens:
                     # İşleyici bir karar penceresi açtı: kalanları İŞLEME,
                     # kullanıcıya sürpriz yapma.
-                    for bekleyen in self._queue:
-                        self._record(bekleyen, ScanOutcome.BLOCKED)
-                        if self.on_blocked is not None:
-                            self.on_blocked(bekleyen)
+                    bekleyenler = list(self._queue)
                     self._queue.clear()
+                    for bekleyen in bekleyenler:
+                        self._bildir_engellendi(bekleyen)
                     return
                 event = self._queue.popleft()
                 handler = self._handlers.get(self._context or "")
