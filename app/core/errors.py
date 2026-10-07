@@ -215,6 +215,13 @@ class GeriAlmaKanitlanamaz(DomainError):
         self.urun_adlari = adlar
 
 
+class FisGeriAlinamaz(DomainError):
+    """Fiş yapısı gereği geri alınamaz (taslak, ters fiş, zaten geri alınmış)."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
 # --- Sayım ----------------------------------------------------------------
 class SayimBulunamadi(DomainError):
     def __init__(self) -> None:

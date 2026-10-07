@@ -504,16 +504,19 @@ class Database:
                 "UPDATE products SET current_stock = 0, stock_value = 0 "
                 " WHERE id NOT IN (SELECT product_id FROM stock_movements)"
             )
+            # Son satış damgası: yalnızca GERİ ALINMAMIŞ satışlar sayılır ve
+            # hiç satışı kalmayan ürünün damgası NULL olur (sale_service.
+            # _refresh_last_sale ile aynı tanım).
             conn.execute(
                 """
-                UPDATE products AS p
-                   SET last_sale_at_utc = a.ts
-                  FROM (SELECT si.product_id, MAX(s.created_at_utc) AS ts
-                          FROM sale_items si
-                          JOIN sales s ON s.id = si.sale_id
-                         WHERE s.entry_type = 'SALE'
-                         GROUP BY si.product_id) AS a
-                 WHERE a.product_id = p.id
+                UPDATE products
+                   SET last_sale_at_utc = (
+                       SELECT MAX(s.created_at_utc)
+                         FROM sale_items si
+                         JOIN sales s ON s.id = si.sale_id
+                        WHERE si.product_id = products.id
+                          AND s.entry_type = 'SALE'
+                          AND s.is_reversed = 0)
                 """
             )
             conn.execute(
@@ -734,12 +737,17 @@ class Database:
             "    WHERE l.receipt_id = r.id)",
             "I16: {n} alış fişinin toplamı satırlarıyla uyuşmuyor.",
         )
+        # Fiş geri alması kanıtlanabilir mi: orijinal hareket ile ters kaydı
+        # ARASINDA başka bir hareket olmamalı. Aynı fişin (ya da ters fişin)
+        # kendi satırları sayılmaz; ters kayıttan SONRAKİ hareketler (geri
+        # almadan sonra yapılan satışlar) kanıtı bozmaz (V1.1 yanlış alarmı).
         check(
             "SELECT COUNT(*) FROM stock_movements r "
             "JOIN stock_movements o ON o.id = r.reverses_movement_id "
             "WHERE r.movement_type = 'PURCHASE_REVERSAL' AND EXISTS "
             "  (SELECT 1 FROM stock_movements x WHERE x.product_id = o.product_id "
-            "     AND x.id > o.id AND x.id <> r.id)",
+            "     AND x.id > o.id AND x.id < r.id "
+            "     AND NOT (x.ref_type = 'RECEIPT' AND x.ref_id IN (o.ref_id, r.ref_id)))",
             "I31: {n} fiş geri alması kanıtlanabilir değil.",
         )
 
@@ -773,16 +781,43 @@ class Database:
         )
 
         if deep:
+            # Özet tabloları geri almayı ORİJİNAL satışın gününe yazar; satış
+            # tarafı da öyle gruplanır. Karşılaştırma İKİ YÖNLÜDÜR (özette
+            # olmayan satış da, satışı olmayan özet de yakalanır) ve maliyeti
+            # içerir.
             check(
                 "SELECT COUNT(*) FROM ("
-                "  SELECT d.business_date, d.product_id FROM product_daily_sales d "
-                "  LEFT JOIN (SELECT s.business_date bd, i.product_id pid, "
-                "                    SUM(i.quantity) q, SUM(i.line_total) amt "
-                "               FROM sale_items i JOIN sales s ON s.id = i.sale_id "
-                "              GROUP BY s.business_date, i.product_id) a "
-                "    ON a.bd = d.business_date AND a.pid = d.product_id "
-                "  WHERE d.quantity <> COALESCE(a.q, 0) OR d.amount <> COALESCE(a.amt, 0))",
+                "  SELECT bd, pid FROM ("
+                "    SELECT business_date bd, product_id pid, quantity q, amount a, cost c "
+                "      FROM product_daily_sales "
+                "    UNION ALL "
+                "    SELECT COALESCE(o.business_date, s.business_date), i.product_id, "
+                "           -i.quantity, -i.line_total, -i.cost_total "
+                "      FROM sale_items i JOIN sales s ON s.id = i.sale_id "
+                "      LEFT JOIN sales o ON o.id = s.reverses_sale_id) "
+                "  GROUP BY bd, pid "
+                "  HAVING SUM(q) <> 0 OR SUM(a) <> 0 OR SUM(c) <> 0)",
                 "I23: {n} günlük özet satırı satışlarla uyuşmuyor.",
+            )
+            check(
+                "SELECT COUNT(*) FROM ("
+                "  SELECT bd FROM ("
+                "    SELECT business_date bd, sale_count n, total_amount t, total_cost c, "
+                "           item_count k, cash_amount na, card_amount ka "
+                "      FROM daily_sales_rollup "
+                "    UNION ALL "
+                "    SELECT COALESCE(o.business_date, s.business_date), "
+                "           CASE WHEN s.entry_type = 'SALE' THEN -1 ELSE 1 END, "
+                "           -s.total_amount, -s.total_cost, -s.item_count, "
+                "           CASE WHEN s.payment_method = 'NAKIT' THEN -s.total_amount "
+                "                ELSE 0 END, "
+                "           CASE WHEN s.payment_method = 'KART' THEN -s.total_amount "
+                "                ELSE 0 END "
+                "      FROM sales s LEFT JOIN sales o ON o.id = s.reverses_sale_id) "
+                "  GROUP BY bd "
+                "  HAVING SUM(n) <> 0 OR SUM(t) <> 0 OR SUM(c) <> 0 OR SUM(k) <> 0 "
+                "      OR SUM(na) <> 0 OR SUM(ka) <> 0)",
+                "I34: {n} günlük satış özeti satışlarla uyuşmuyor.",
             )
             check(
                 "SELECT COUNT(*) FROM stock_movements m JOIN "

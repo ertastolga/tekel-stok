@@ -30,6 +30,7 @@ from app.core.db import Database
 from app.core.errors import (
     BosFis,
     FisBulunamadi,
+    FisGeriAlinamaz,
     FisZatenTamamlanmis,
     GeriAlmaKanitlanamaz,
 )
@@ -159,11 +160,25 @@ class PurchaseService:
                 )
             self._refresh_totals(conn, receipt_id)
 
+    @staticmethod
+    def _taslak_satiri(conn: sqlite3.Connection, line_id: int) -> sqlite3.Row | None:
+        """Satırı döner; fişi TASLAK değilse düzenlemeyi reddeder.
+
+        Tamamlanmış (stoğa işlenmiş) bir fişin satırı değişirse fiş toplamı ile
+        stok defteri ayrışır; bu yüzden düzenleme yalnızca taslakta mümkündür.
+        """
+        satir = conn.execute(
+            "SELECT l.*, r.status AS fis_durumu FROM purchase_receipt_lines l "
+            "  JOIN purchase_receipts r ON r.id = l.receipt_id WHERE l.id = ?",
+            (line_id,),
+        ).fetchone()
+        if satir is not None and satir["fis_durumu"] != "DRAFT":
+            raise FisZatenTamamlanmis()
+        return satir
+
     def set_line_quantity(self, line_id: int, quantity: int) -> None:
         with self.db.transaction() as conn:
-            satir = conn.execute(
-                "SELECT * FROM purchase_receipt_lines WHERE id = ?", (line_id,)
-            ).fetchone()
+            satir = self._taslak_satiri(conn, line_id)
             if satir is None:
                 return
             if quantity <= 0:
@@ -178,9 +193,7 @@ class PurchaseService:
 
     def set_line_cost(self, line_id: int, unit_cost: int) -> None:
         with self.db.transaction() as conn:
-            satir = conn.execute(
-                "SELECT * FROM purchase_receipt_lines WHERE id = ?", (line_id,)
-            ).fetchone()
+            satir = self._taslak_satiri(conn, line_id)
             if satir is None:
                 return
             conn.execute(
@@ -290,19 +303,27 @@ class PurchaseService:
     def reversal_preview(self, receipt_id: int) -> ReversalPreview:
         """Geri alma KANITLANABİLİR mi? Pencere yalnızca bu sonucu çizer.
 
-        Kanıt koşulu: fişteki her ürün için, o fişin hareketinden sonra başka
-        hiçbir stok hareketi olmamalı. Ancak o zaman ters kayıt stok ve değeri
-        fiş öncesi hâline tam olarak döndürebilir.
+        Kanıt koşulu: fişteki her ürün için, o fişin hareketinden sonra BAŞKA
+        hiçbir stok hareketi olmamalı. Aynı fişin kendi satırları (aynı ürün
+        iki farklı fiyatla iki satırda gelebilir) engel sayılmaz. Ancak o zaman
+        ters kayıt stok ve değeri fiş öncesi hâline tam olarak döndürebilir.
+
+        Yapısal olarak geri alınamayan fişler (taslak, ters fiş, zaten geri
+        alınmış) ``reason`` ile reddedilir.
         """
         fis = self.receipt(receipt_id)
         if fis is None:
             raise FisBulunamadi()
+        neden = self._yapisal_ret(fis)
+        if neden:
+            return ReversalPreview(allowed=False, receipt_id=receipt_id, reason=neden)
 
         engelleyen = self.db.query(
             "SELECT p.name, COUNT(x.id) AS sonraki, MIN(x.movement_type) AS ilk_tur "
             "  FROM stock_movements m "
             "  JOIN products p ON p.id = m.product_id "
             "  JOIN stock_movements x ON x.product_id = m.product_id AND x.id > m.id "
+            "   AND NOT (x.ref_type = 'RECEIPT' AND x.ref_id = m.ref_id) "
             " WHERE m.ref_type = 'RECEIPT' AND m.ref_id = ? "
             " GROUP BY p.id ORDER BY p.name_norm",
             (receipt_id,),
@@ -313,6 +334,15 @@ class PurchaseService:
             blocking=[(r["name"], r["sonraki"], r["ilk_tur"]) for r in engelleyen],
         )
 
+    def _yapisal_ret(self, fis: sqlite3.Row) -> str:
+        if fis["status"] != "COMMITTED":
+            return "Taslak stok girişi geri alınmaz; dilerseniz silebilirsiniz."
+        if fis["reverses_receipt_id"] is not None:
+            return "Bu kayıt bir geri almadır; tekrar geri alınamaz."
+        if self.is_reversed(fis["id"]):
+            return "Bu stok girişi daha önce geri alınmış."
+        return ""
+
     def reverse(self, receipt_id: int, note: str | None = None) -> int:
         """Fişi ters kayıtla geri alır — yalnızca kanıtlanabiliyorsa.
 
@@ -321,17 +351,17 @@ class PurchaseService:
         "Düzeltme Girişi" (``InventoryService.manual_adjustment``) yapar.
         """
         onizleme = self.reversal_preview(receipt_id)
+        if onizleme.reason:
+            raise FisGeriAlinamaz(onizleme.reason)
         if not onizleme.allowed:
             raise GeriAlmaKanitlanamaz(onizleme.blocking_names)
 
         fis = self.receipt(receipt_id)
-        if fis["status"] != "COMMITTED":
-            raise FisZatenTamamlanmis()
 
         stamp = self.settings.calendar().stamp()
         with self.db.transaction() as conn:
             try:
-                ters_id = conn.execute(
+                imlec = conn.execute(
                     "INSERT INTO purchase_receipts(status, supplier_id, invoice_no, "
                     "  receipt_date, created_at_utc, committed_at_utc, "
                     "  reverses_receipt_id, note) "
@@ -341,13 +371,21 @@ class PurchaseService:
                     "   AND o.reverses_receipt_id IS NULL",
                     (stamp.business_date, stamp.created_at_utc, stamp.created_at_utc,
                      note, receipt_id),
-                ).lastrowid
+                )
             except sqlite3.IntegrityError as exc:
-                raise FisZatenTamamlanmis() from exc
+                raise FisGeriAlinamaz("Bu stok girişi daha önce geri alınmış.") from exc
+            # ``lastrowid`` 0 satırlık bir INSERT...SELECT'te ÖNCEKİ bir eklemenin
+            # kimliğini taşır; satırlar ilgisiz bir fişe bağlanmasın diye
+            # satır sayısı AÇIKÇA denetlenir.
+            if imlec.rowcount != 1:
+                raise FisGeriAlinamaz("Bu stok girişi geri alınamaz.")
+            ters_id = imlec.lastrowid
 
+            # Ters sırayla (LIFO): her ters kayıt, fişin o satırdan ÖNCEKİ
+            # hâline döner; aynı ürünün iki satırı da doğru çözülür.
             satirlar = conn.execute(
                 "SELECT * FROM purchase_receipt_lines WHERE receipt_id = ? "
-                " ORDER BY line_no", (receipt_id,)
+                " ORDER BY line_no DESC", (receipt_id,)
             ).fetchall()
 
             for satir in satirlar:

@@ -200,6 +200,9 @@ class ReversalPreview:
     allowed: bool
     receipt_id: int
     blocking: list[tuple[str, int, str]] = field(default_factory=list)
+    #: Yapısal ret nedeni (taslak, ters fiş, zaten geri alınmış). Boşsa ret
+    #: nedeni ``blocking`` listesidir (sonradan yapılan hareketler).
+    reason: str = ""
 
     @property
     def blocking_names(self) -> list[str]:

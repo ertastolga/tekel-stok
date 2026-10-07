@@ -7,6 +7,12 @@ değişse bile geçmiş raporlar OLDUĞU GİBİ kalır.
 Günlük toplamlar ``daily_sales_rollup`` ve ``product_daily_sales`` özet
 tablolarından okunur: milyonlarca satış satırı taranmaz.
 
+Geri almalar (V1.2): her dönem ölçüsü geri almayı ORİJİNAL satışın iş gününe
+yazar — özet tabloları zaten böyle tutulur. Ham ``sales`` sorguları bu yüzden
+``entry_type = 'SALE' AND is_reversed = 0`` kullanır (tam geri almalarda
+netleştirmeyle aynı sonuç). Kasadan o gün yapılan iadeler ayrıca ``refunds``
+ile, GERİ ALMA gününe göre okunur (kasa sayımı için).
+
 KESİN ve TAHMİNİ veri asla karıştırılmaz: sepet satışları gerçek müşteri
 sepetidir; Hızlı Satış'tan türetilen gruplar yalnızca TAHMİNDİR ve öyle
 etiketlenir.
@@ -220,7 +226,8 @@ class AnalyticsService:
         """
         rows = self.db.query(
             "SELECT local_hour, COALESCE(SUM(total_amount), 0) AS ciro, COUNT(*) AS islem "
-            "  FROM sales WHERE entry_type = 'SALE' AND business_date BETWEEN ? AND ? "
+            "  FROM sales WHERE entry_type = 'SALE' AND is_reversed = 0 "
+            "   AND business_date BETWEEN ? AND ? "
             " GROUP BY local_hour",
             (start, end),
         )
@@ -233,7 +240,8 @@ class AnalyticsService:
         """(gün, ciro, işlem) — 0 = Pazartesi, iş gününden türetilmiştir."""
         rows = self.db.query(
             "SELECT local_dow, COALESCE(SUM(total_amount), 0) AS ciro, COUNT(*) AS islem "
-            "  FROM sales WHERE entry_type = 'SALE' AND business_date BETWEEN ? AND ? "
+            "  FROM sales WHERE entry_type = 'SALE' AND is_reversed = 0 "
+            "   AND business_date BETWEEN ? AND ? "
             " GROUP BY local_dow",
             (start, end),
         )
@@ -320,11 +328,30 @@ class AnalyticsService:
         doğru görünür ama ileride bir VERESIYE ya da DIGER satışı yazıldığı an
         o tutar sessizce "Kaydedilmemiş" diye etiketlenirdi.
 
-        ``entry_type`` filtresi yoktur: ters kayıtlar negatif tutar taşıdığı
-        için kovalar kendiliğinden netleşir. ``daily_sales_rollup`` yalnızca
-        nakit/kart kovası tanıdığı için bu ayrımı YAPAMAZ; yetkili kaynak
-        ``sales`` tablosudur.
+        Geri alınan satış ORİJİNAL iş gününde netleşir (geri alınmamış
+        satışlar sayılır): günler arası bir geri alma, satış gününe +, geri
+        alma gününe − yazılmaz (V1.1'de KART +160 / −160 görünüyordu). O gün
+        kasadan yapılan iadeler ``refunds`` ile ayrıca görülür.
+        ``daily_sales_rollup`` yalnızca nakit/kart kovası tanıdığı için bu
+        ayrımı YAPAMAZ; yetkili kaynak ``sales`` tablosudur.
         """
+        return self._payment_buckets(
+            "entry_type = 'SALE' AND is_reversed = 0", start, end, sign=1
+        )
+
+    def refunds(self, start: str, end: str) -> PaymentBreakdown:
+        """Bu dönemde YAPILAN iadeler (geri alma gününe göre, pozitif tutar).
+
+        Kasa sayımı içindir: dün yapılan kartlı satışın bugün geri alınması,
+        bugünün iadesidir; satış ölçülerine ise orijinal günde yansır.
+        """
+        return self._payment_buckets(
+            "entry_type = 'SALE_REVERSAL'", start, end, sign=-1
+        )
+
+    def _payment_buckets(
+        self, kosul: str, start: str, end: str, sign: int
+    ) -> PaymentBreakdown:
         row = self.db.query_one(
             "SELECT "
             "  COALESCE(SUM(CASE WHEN payment_method = 'NAKIT'    "
@@ -337,12 +364,13 @@ class AnalyticsService:
             "            THEN total_amount ELSE 0 END), 0) AS diger, "
             "  COALESCE(SUM(CASE WHEN payment_method IS NULL      "
             "            THEN total_amount ELSE 0 END), 0) AS kaydedilmemis "
-            "  FROM sales WHERE business_date BETWEEN ? AND ?",
+            f"  FROM sales WHERE {kosul} AND business_date BETWEEN ? AND ?",
             (start, end),
         )
         return PaymentBreakdown(
-            nakit=row["nakit"], kart=row["kart"], veresiye=row["veresiye"],
-            diger=row["diger"], kaydedilmemis=row["kaydedilmemis"],
+            nakit=sign * row["nakit"], kart=sign * row["kart"],
+            veresiye=sign * row["veresiye"], diger=sign * row["diger"],
+            kaydedilmemis=sign * row["kaydedilmemis"],
         )
 
     # ===================== Sepet özeti ===================================
@@ -425,12 +453,14 @@ class AnalyticsService:
         """KESİN sepet sayısı: yalnızca Sepetli Satış işlemleri.
 
         Hızlı Satış'tan türetilen gruplar TAHMİNİDİR ve buraya karışmaz.
+        Geri alınan sepet sayılmaz (``basket_summary`` ile aynı tanım).
         İleride yapılacak sepet analizinin veri temeli budur.
         """
         return int(
             self.db.scalar(
                 "SELECT COUNT(*) FROM sales WHERE entry_type = 'SALE' "
-                "  AND sale_mode = 'SEPET' AND business_date BETWEEN ? AND ?",
+                "  AND sale_mode = 'SEPET' AND is_reversed = 0 "
+                "  AND business_date BETWEEN ? AND ?",
                 (start, end), default=0,
             )
         )

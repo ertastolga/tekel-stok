@@ -281,6 +281,10 @@ class HistoryPage(Page):
 
         # Servis KARAR VERİR, pencere yalnızca çizer.
         onizleme = self.services.purchases.reversal_preview(fis["id"])
+        if onizleme.reason:
+            with scanning_suspended(self.main_window.router):
+                show_info(self, "Bu giriş geri alınamıyor", onizleme.reason)
+            return
         if not onizleme.allowed:
             adlar = ", ".join(onizleme.blocking_names[:5])
             with scanning_suspended(self.main_window.router):
