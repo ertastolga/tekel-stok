@@ -37,6 +37,7 @@ QT_SUZ = [
     "app/scanner/scan_router.py",
     "app/scanner/scan_event.py",
     "app/tools/veri_guvenligi.py",
+    "app/tools/perf_dataset.py",
 ]
 
 #: Kasa sayfaları: iç içe olay döngüsü kullanmaz (kaplamalar sinyalle çalışır).

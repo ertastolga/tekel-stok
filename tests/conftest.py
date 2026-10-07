@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -92,6 +93,47 @@ def services(db_file: Path, _sablon_db: Path):
 
 
 FIXTURES = ROOT / "tests" / "fixtures"
+
+#: ``-m perf`` veri şablonlarının önbelleği (sentetik veri; anahtar üretici
+#: kaynağını, parametreleri ve şema sürümünü içerir — değişince yeniden üretilir).
+PERF_ONBELLEK = Path(tempfile.gettempdir()) / "tekelstok_perf_onbellek"
+
+
+@pytest.fixture(scope="session")
+def perf_sablonu():
+    """Hazır büyük veri şablonunun (``10k`` / ``100k``) SALT OKUNUR yolunu döner.
+
+    Testler şablonu değiştirmemelidir; değiştirecekse ``perf_kopya`` kullanır.
+    """
+    from app.tools import perf_dataset
+
+    def _sablon(ad: str) -> Path:
+        parametreler = perf_dataset.HAZIR[ad]
+        yol = PERF_ONBELLEK / f"{ad}_{parametreler.anahtar()}.db"
+        if not yol.exists():
+            gecici = PERF_ONBELLEK / f"{ad}_{parametreler.anahtar()}.uretiliyor.db"
+            for artik in (gecici, Path(str(gecici) + ".meta.json")):
+                artik.unlink(missing_ok=True)
+            with pytest.MonkeyPatch.context() as mp:
+                mp.setenv("TEKEL_DATA_DIR", str(PERF_ONBELLEK))
+                perf_dataset.uret(parametreler, gecici)
+            Path(str(gecici) + ".meta.json").replace(Path(str(yol) + ".meta.json"))
+            gecici.replace(yol)
+        return yol
+
+    return _sablon
+
+
+@pytest.fixture
+def perf_kopya(perf_sablonu, tmp_path):
+    """Şablonun bu teste ait, değiştirilebilir KOPYASI."""
+
+    def _kopya(ad: str) -> Path:
+        hedef = tmp_path / f"perf_{ad}.db"
+        shutil.copyfile(perf_sablonu(ad), hedef)
+        return hedef
+
+    return _kopya
 
 
 @pytest.fixture
