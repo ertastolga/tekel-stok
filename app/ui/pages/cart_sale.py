@@ -18,6 +18,11 @@ Tasarım kuralları
   sessizce nakit kaydeden genel bir kısayol yoktur.
 * Ödeme onayı veritabanı işleminin DIŞINDA ve ÖNCE alınır.
 * Başarı geri bildirimi ASLA modal değildir.
+* Ekranda görünen = ödemesi alınan = kaydedilen tutar: ödeme onayından HEMEN
+  önce sepet güncel fiyatlarla doğrulanır; fiyatı değişen satır işaretlenir ve
+  "Güncel fiyatları uygula" ya da satırı çıkarmadan ödeme yapılamaz.
+* Sepet her değiştiğinde kısa bir gecikmeyle diske yazılır (elektrik kesintisi,
+  kapanış); boşalan sepetin taslağı iptal edilir.
 """
 from __future__ import annotations
 
@@ -37,7 +42,7 @@ from PySide6.QtWidgets import (
 from app.core.errors import DomainError
 from app.core.models import PaymentMethod
 from app.core.money import format_tl
-from app.services.cart_service import Cart
+from app.services.cart_service import SORUN_FIYAT_DEGISTI, LineIssue
 from app.ui import metrics, shortcuts, sound, theme
 from app.ui.dialogs.common_dialogs import (
     PackConfirmDialog,
@@ -62,6 +67,11 @@ log = logging.getLogger(__name__)
 #: Son okutulan satırın vurgulu kalma süresi.
 HIGHLIGHT_MS = 900
 
+#: Sepet değiştikten sonra taslağın diske yazılma gecikmesi. Okutma akışını
+#: yavaşlatmayacak kadar uzun, elektrik kesintisinde en fazla bu kadarlık
+#: değişikliği kaybettirecek kadar kısa.
+AUTOSAVE_MS = 750
+
 #: Ayar okunamazsa kullanılan ekran bekletme süresi.
 #: ``schema.DEFAULT_SETTINGS["customer_display_hold_ms"]`` ile aynı değer.
 FALLBACK_DISPLAY_HOLD_MS = 4000
@@ -77,8 +87,9 @@ class CartSalePage(Page):
 
     def __init__(self, services, main_window) -> None:
         super().__init__(services, main_window)
-        self.cart = Cart()
+        self.cart = services.cart.new_cart()
         self._rows: dict[int, CartLineRow] = {}
+        self._issues: dict[int, LineIssue] = {}
         self._checkout_busy = False
         self._display_hold = False
 
@@ -122,6 +133,10 @@ class CartSalePage(Page):
         self._highlight_timer.setSingleShot(True)
         self._highlight_timer.timeout.connect(self._clear_highlight)
         self._highlighted: CartLineRow | None = None
+
+        self._autosave_timer = QTimer(self)
+        self._autosave_timer.setSingleShot(True)
+        self._autosave_timer.timeout.connect(self._autosave_now)
 
         self._render()
         self._show_ready()
@@ -187,6 +202,15 @@ class CartSalePage(Page):
         ust = QHBoxLayout()
         ust.addWidget(make_label("TOPLAM", "cartGrandLabel"))
         ust.addStretch(1)
+        # Yalnızca fiyatı değişen satır varken görünür: fiyat ASLA sessizce
+        # düzeltilmez, kasiyer açıkça onaylar.
+        self.apply_prices_button = QPushButton("Güncel fiyatları uygula")
+        self.apply_prices_button.setObjectName("primary")
+        self.apply_prices_button.setMinimumHeight(metrics.TOUCH_TARGET_MIN)
+        self.apply_prices_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.apply_prices_button.clicked.connect(self.apply_current_prices)
+        self.apply_prices_button.setVisible(False)
+        ust.addWidget(self.apply_prices_button)
         self.total_label = make_label("0 TL", "cartGrandTotal")
         ust.addWidget(self.total_label)
         kart.body.addLayout(ust)
@@ -226,15 +250,43 @@ class CartSalePage(Page):
 
     def on_deactivated(self) -> None:
         self.focus_keeper.stop()
-        # Ekrandan çıkarken sepet KAYBOLMAZ: taslak olarak diske yazılır.
-        if not self.cart.is_empty:
-            try:
-                self.services.cart.save_draft(self.cart)
-            except Exception:
-                log.exception("Sepet taslağı kaydedilemedi")
+        # Ekrandan çıkarken sepet KAYBOLMAZ: taslak HEMEN diske yazılır.
+        self._autosave_now()
+
+    def on_app_closing(self) -> None:
+        """Uygulama kapanıyor: bekleyen taslak yazımı hemen yapılır.
+
+        Geri yükleme sonrası yeniden başlatmada YAPILMAZ: eski sepet, yeni
+        (geri yüklenmiş) veriye yazılmamalıdır.
+        """
+        self._autosave_timer.stop()
+        if getattr(self.main_window, "restarting", False):
+            return
+        self._autosave_now()
 
     def refresh(self) -> None:
         self._render()
+
+    # ===================== Taslak kalıcılığı =============================
+    def _schedule_autosave(self) -> None:
+        """Sepet değişti: kısa gecikmeyle diske yaz (art arda okutmalar birleşir)."""
+        if getattr(self.main_window, "restarting", False):
+            return
+        self._autosave_timer.start(AUTOSAVE_MS)
+
+    def _autosave_now(self) -> None:
+        self._autosave_timer.stop()
+        if getattr(self.main_window, "restarting", False):
+            return
+        if self._checkout_busy:
+            # Ödeme sürerken sepet değişmez; bitince yeniden denenir.
+            self._autosave_timer.start(AUTOSAVE_MS)
+            return
+        try:
+            self.services.cart.autosave(self.cart)
+        except Exception:
+            # Taslak yazılamaması satışı ENGELLEMEZ; yalnızca iz bırakılır.
+            log.exception("Sepet taslağı kaydedilemedi")
 
     def _offer_draft_recovery(self) -> None:
         """Yarım kalmış sepet KENDİLİĞİNDEN tamamlanmaz; kullanıcı karar verir."""
@@ -261,6 +313,14 @@ class CartSalePage(Page):
             self.services.cart.discard_draft(taslak["id"])
         self._rebuild_rows()
         self._render()
+        if self._issues:
+            # Bekleyen sepet ASLA sessizce onarılmaz: sorunlu satırlar
+            # işaretlidir, kasiyer karar verir.
+            sound.error()
+            self.banner.show_error(
+                "Sepetteki bazı ürünlerde değişiklik var.",
+                "İşaretli satırları kontrol edin.",
+            )
 
     # ===================== Okutma ========================================
     def handle_scan(self, event) -> None:
@@ -318,6 +378,7 @@ class CartSalePage(Page):
 
         sound.success()
         self._render()
+        self._schedule_autosave()
         self._highlight(product_id)
         self.banner.show_success(
             f"✓ {satir.product_name}",
@@ -333,12 +394,25 @@ class CartSalePage(Page):
         """
         self.cart.set_quantity(product_id, new_quantity)
         self._render()
+        self._schedule_autosave()
         if self.cart.find(product_id) is not None:
             self._highlight(product_id)
 
     def _on_remove_requested(self, product_id: int) -> None:
         self.cart.remove(product_id)
         self._render()
+        self._schedule_autosave()
+
+    def apply_current_prices(self) -> None:
+        """Kasiyerin AÇIK kararı: fiyatı değişen satırlara güncel fiyat yazılır."""
+        degisen = self.services.cart.apply_current_prices(self.cart)
+        self._render()
+        self._schedule_autosave()
+        if degisen:
+            self.banner.show_warning(
+                "Güncel fiyatlar uygulandı.",
+                f"Yeni toplam: {format_tl(self.cart.total)}",
+            )
 
     def _clear_cart(self) -> None:
         if self.cart.is_empty:
@@ -351,22 +425,35 @@ class CartSalePage(Page):
             )
         if not onay:
             return
+        self._autosave_timer.stop()
         if self.cart.draft_id is not None:
             self.services.cart.discard_draft(self.cart.draft_id)
-        self.cart = Cart()
+        self.cart = self.services.cart.new_cart()
         self._rebuild_rows()
         self._render()
         self._show_ready()
 
     # ===================== Ödeme =========================================
-    def complete(self, payment_method: str = PaymentMethod.CASH) -> None:
-        """Sepeti ÖDEMEYLE tamamlar.
+    def complete(self, payment_method: str = PaymentMethod.CASH) -> bool:
+        """Sepeti ÖDEMEYLE tamamlar; satış YAZILDIYSA ``True`` döner.
 
         Varsayılan NAKİT'tir; NAKİT düğmesi ve testler bunu argümansız çağırır.
         Genel F10 kısayolu bu metoda ULAŞMAZ (``completes_with_shortcut`` False).
         """
         if self._checkout_busy or self.cart.is_empty:
-            return
+            return False
+
+        # Ödeme onayından HEMEN ÖNCE: sepet güncel fiyatlarla aynı mı?
+        self._refresh_issues()
+        if self._issues:
+            self._render()
+            sound.error()
+            self.banner.show_error(
+                "Ödeme alınmadı: sepette değişen ürün var.",
+                "İşaretli satırlar için \"Güncel fiyatları uygula\"ya dokunun "
+                "ya da ürünü sepetten çıkarın.",
+            )
+            return False
 
         self._checkout_busy = True
         self._set_payment_enabled(False)
@@ -383,32 +470,33 @@ class CartSalePage(Page):
                         odeme.message or "Ödeme tamamlanmadı.",
                         "Sepetiniz olduğu gibi duruyor.",
                     )
-                    return
+                    return False
 
                 # 2) SONRA satış.
                 try:
                     sonuc = self.services.cart.checkout(
                         self.cart, payment_method=payment_method
                     )
-                except DomainError as hata:
-                    sound.error()
-                    self.banner.show_error(hata.message)
-                    return
-                except Exception:
-                    # Ödeme onaylandı ama satış yazılamadı. V1.1'de manuel
-                    # adaptörlerde iptal edilecek elektronik işlem YOKTUR;
+                except Exception as hata:
+                    # Ödeme onaylandı ama satış yazılamadı (iş kuralı ya da
+                    # beklenmeyen hata — fark etmez). V1.1/V1.2 manuel
+                    # adaptörlerinde iptal edilecek elektronik işlem YOKTUR;
                     # yine de iz bırakılır ve kullanıcı açıkça uyarılır.
                     log.critical(
                         "Ödeme onaylandı ama satış yazılamadı: %s %s ref=%s",
                         payment_method, son_tutar, odeme.reference, exc_info=True,
                     )
                     sound.error()
-                    self.banner.show_error(
-                        "Satış kaydedilemedi.",
-                        "Ödeme alındıysa lütfen kontrol edin. "
-                        "Sepet olduğu gibi duruyor.",
+                    neden = (
+                        hata.message if isinstance(hata, DomainError)
+                        else "Satış kaydedilemedi."
                     )
-                    return
+                    self.banner.show_error(
+                        neden,
+                        "Ödeme alındıysa lütfen kontrol edin. Satış KAYDEDİLMEDİ; "
+                        "sepet olduğu gibi duruyor.",
+                    )
+                    return False
                 basarili = True
         finally:
             self._checkout_busy = False
@@ -420,6 +508,7 @@ class CartSalePage(Page):
                 self._render()
 
         self._finish_success(sonuc, payment_method, son_tutar)
+        return True
 
     def _finish_success(self, sonuc, payment_method: str, son_tutar: int) -> None:
         # Müşteri ekranı EN BAŞTA işlenir ve serbest bırakma zamanlayıcısı
@@ -460,8 +549,9 @@ class CartSalePage(Page):
             return FALLBACK_DISPLAY_HOLD_MS
 
     def _set_payment_enabled(self, enabled: bool) -> None:
-        self.cash_button.setEnabled(enabled and not self.cart.is_empty)
-        self.card_button.setEnabled(enabled and not self.cart.is_empty)
+        acik = enabled and not self.cart.is_empty and not self._issues
+        self.cash_button.setEnabled(acik)
+        self.card_button.setEnabled(acik)
 
     # ===================== Geri alma =====================================
     def undo_last(self) -> None:
@@ -556,6 +646,7 @@ class CartSalePage(Page):
         tazelenir, yalnızca yeni ürün için gereç oluşturulur.
         """
         mevcut = {line.product_id: line for line in self.cart.lines}
+        self._refresh_issues()
 
         for product_id in list(self._rows):
             if product_id not in mevcut:
@@ -576,7 +667,12 @@ class CartSalePage(Page):
                 self.rows_layout.insertWidget(index, satir)
             else:
                 satir.update_line(line)
+            sorun = self._issues.get(line.product_id)
+            satir.set_issue(sorun.message if sorun else None)
 
+        self.apply_prices_button.setVisible(
+            any(s.kind == SORUN_FIYAT_DEGISTI for s in self._issues.values())
+        )
         dolu = not self.cart.is_empty
         self.empty.setVisible(not dolu)
         self.clear_button.setEnabled(dolu)
@@ -602,6 +698,18 @@ class CartSalePage(Page):
             if dolu else "Barkodu okutun."
         )
         self._publish_display()
+
+    def _refresh_issues(self) -> None:
+        """Sepeti güncel ürün kayıtlarıyla karşılaştırır (tek, hızlı sorgu)."""
+        if self.cart.is_empty:
+            self._issues = {}
+            return
+        try:
+            sorunlar = self.services.cart.validate(self.cart)
+        except Exception:
+            log.exception("Sepet doğrulanamadı")
+            return
+        self._issues = {s.product_id: s for s in sorunlar}
 
     def _highlight(self, product_id: int) -> None:
         """Son okutulan satırı vurgular ve görünür alana kaydırır."""

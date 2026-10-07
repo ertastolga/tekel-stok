@@ -151,6 +151,31 @@ class BosSepet(DomainError):
         super().__init__("Sepet boş. Önce ürün okutun.")
 
 
+class FiyatDegisti(DomainError):
+    """Sepetteki bir ürünün fiyatı sepete eklendikten SONRA değişti.
+
+    Ekranda görünen, ödemesi alınan ve kaydedilen tutar AYNI olmalıdır; bu
+    yüzden satış yazılmaz ve kullanıcıdan açık bir karar beklenir.
+    """
+
+    def __init__(self, sorunlar: list | None = None) -> None:
+        super().__init__(
+            "Sepetteki bazı ürünlerin fiyatı değişti. Güncel fiyatları uygulayın "
+            "ya da ürünü sepetten çıkarın.",
+            "; ".join(getattr(s, "message", str(s)) for s in (sorunlar or [])),
+        )
+        self.sorunlar = list(sorunlar or [])
+
+
+class EskiOturumSepeti(DomainError):
+    """Sepet, veritabanı yeniden açılmadan (ör. yedek geri yüklenmeden) önceye ait."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Bu sepet, geri yüklenen veriden önceye ait olduğu için kaydedilmedi."
+        )
+
+
 # --- Alış / stok ----------------------------------------------------------
 class FisBulunamadi(DomainError):
     def __init__(self) -> None:

@@ -48,6 +48,11 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.services = services
         self.restart_callback = restart_callback
+        #: Geri yükleme sonrası yeniden başlatma istendi: sayfalar artık eski
+        #: veriye ait hiçbir şeyi (ör. sepet taslağı) diske yazmaz.
+        self.restarting = False
+        self._status_timer = None
+        self._status_message = ""
 
         self.setWindowTitle(f"{config.APP_NAME} {config.APP_VERSION}")
         self.setMinimumSize(metrics.MIN_WINDOW_WIDTH, metrics.MIN_WINDOW_HEIGHT)
@@ -313,15 +318,28 @@ class MainWindow(QMainWindow):
 
     # ===================== Durum çubuğu ==================================
     def show_status(self, message: str, seconds: int = 4) -> None:
+        """Durum çubuğu iletisi; ``seconds`` sonra (hâlâ aynıysa) silinir.
+
+        Tek, pencereye bağlı (parent'lı) bir zamanlayıcı kullanılır: pencere
+        kapanınca zamanlayıcı da yok olur, bağlamsız bir lambda silinmiş bir
+        gerece dokunmaz; art arda iletiler zamanlayıcı biriktirmez.
+        """
         self.status_label.setText(message)
-        if seconds > 0:
+        if self._status_timer is None:
             from PySide6.QtCore import QTimer
 
-            QTimer.singleShot(
-                seconds * 1000,
-                lambda: self.status_label.setText("")
-                if self.status_label.text() == message else None,
-            )
+            self._status_timer = QTimer(self)
+            self._status_timer.setSingleShot(True)
+            self._status_timer.timeout.connect(self._expire_status)
+        self._status_message = message
+        if seconds > 0:
+            self._status_timer.start(seconds * 1000)
+        else:
+            self._status_timer.stop()
+
+    def _expire_status(self) -> None:
+        if self.status_label.text() == self._status_message:
+            self.status_label.setText("")
 
     def clear_status(self) -> None:
         self.status_label.setText("")
@@ -352,6 +370,7 @@ class MainWindow(QMainWindow):
         self.scan_guard.set_window(self.services.settings.duplicate_scan_ms())
 
     def request_restart(self) -> None:
+        self.restarting = True
         if self.restart_callback is not None:
             self.restart_callback()
 
@@ -384,6 +403,12 @@ class MainWindow(QMainWindow):
             log.exception("Pencere konumu kaydedilemedi")
 
     def closeEvent(self, event) -> None:  # noqa: N802
+        # Sayfalar bekleyen işlerini (ör. sepet taslağı) diske yazar.
+        for anahtar, sayfa in self.pages.items():
+            try:
+                sayfa.on_app_closing()
+            except Exception:
+                log.exception("Sayfa kapanış hazırlığında hata: %s", anahtar)
         self._save_geometry()
         self.scanner.stop()
         super().closeEvent(event)

@@ -101,6 +101,8 @@ class CartLineRow(QFrame):
         duzen.addWidget(self.remove_button)
 
         self._quantity = 0
+        self._price_text = ""
+        self._issue: str | None = None
         self.update_line(line)
 
     # ===================== Güncelleme ====================================
@@ -112,13 +114,38 @@ class CartLineRow(QFrame):
         self._quantity = int(line.quantity)
         self._raw_name = line.product_name
         self._elide_name()
-        self.price_label.setText(f"{format_tl(line.unit_price)} / adet")
+        self._price_text = f"{format_tl(line.unit_price)} / adet"
+        self._refresh_price_text()
         self.qty_label.setText(str(self._quantity))
         self.total_label.setText(format_tl(line.line_total))
         # 1 adetteyken eksiye basmak satırı siler — bunu kullanıcıya söyle.
         self.minus_button.setToolTip(
             "Ürünü sepetten çıkar" if self._quantity <= 1 else "Adedi azalt"
         )
+
+    def set_issue(self, text: str | None) -> None:
+        """Ödemeden önce çözülmesi gereken sorunu satırda gösterir.
+
+        Örnek: "Fiyat değişti: 80,00 TL → 85,00 TL". ``None`` sorunu kaldırır.
+        """
+        if text == self._issue:
+            return
+        self._issue = text
+        self._refresh_price_text()
+
+    @property
+    def issue_text(self) -> str | None:
+        return self._issue
+
+    def _refresh_price_text(self) -> None:
+        if self._issue:
+            self.price_label.setText(f"⚠ {self._issue}")
+            self.price_label.setStyleSheet(
+                f"color: {theme.WARNING}; font-weight: 600;"
+            )
+        else:
+            self.price_label.setText(self._price_text)
+            self.price_label.setStyleSheet("")
 
     def set_highlighted(self, highlighted: bool) -> None:
         """Son okutulan satırı kısa süre vurgular."""

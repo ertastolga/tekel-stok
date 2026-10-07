@@ -90,6 +90,10 @@ class Database:
         self.last_migration_backup: Path | None = None
         #: Göçten ÖNCE zaten var olan yabancı anahtar ihlalleri (bilgi amaçlı).
         self.preexisting_fk_violations: list[tuple] = []
+        #: Her başarılı açılışta artar. Geri yükleme bağlantıyı kapatıp yeniden
+        #: açtığı için, önceki açılışa ait bellek nesneleri (ör. açık sepet)
+        #: bu sayıyla yakalanır ve YENİ veriye yazılmaz.
+        self.generation = 0
 
     # -- Yaşam döngüsü ----------------------------------------------------
     @property
@@ -137,6 +141,7 @@ class Database:
             self.migrate()
             asama = "son"
             self.conn.execute("PRAGMA foreign_keys = ON")
+            self.generation += 1
         except VeritabaniHatasi as exc:
             self._kapat_zorla()
             if asama == "goc" and not isinstance(exc, GocBasarisiz):

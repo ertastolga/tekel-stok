@@ -46,6 +46,12 @@ class Page(QWidget):
     def on_deactivated(self) -> None:
         """Sayfa gizlendi. Zamanlayıcılar burada durdurulur."""
 
+    def on_app_closing(self) -> None:
+        """Uygulama kapanıyor (görünür olsun olmasın HER sayfa için çağrılır).
+
+        Bekleyen kalıcılık işleri burada bitirilir. Varsayılan: hiçbir şey.
+        """
+
     def refresh(self) -> None:
         """Verileri yeniden yükle. Alt sınıflar doldurur."""
 

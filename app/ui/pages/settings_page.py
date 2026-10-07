@@ -278,7 +278,7 @@ class SettingsPage(Page):
 
             index = self.sale_mode_combo.findData(ayarlar.default_sale_mode())
             if index >= 0:
-                self.mode_combo.setCurrentIndex(index)
+                self.sale_mode_combo.setCurrentIndex(index)
             self.pack_check.setChecked(ayarlar.pack_confirm_in_sale())
             self.group_check.setChecked(ayarlar.smart_grouping_enabled())
             self.sound_check.setChecked(ayarlar.sound_enabled())

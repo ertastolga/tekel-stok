@@ -45,6 +45,31 @@ def scanning_suspended(router, on_blocked=None, reason: str = "karar penceresi")
         router.resume(jeton)
 
 
+def _yonlendirici(parent: QWidget | None):
+    """Ebeveyn zincirinde okutma yönlendiricisi olan pencereyi bulur."""
+    gerec = parent
+    while gerec is not None:
+        yonlendirici = getattr(gerec, "router", None)
+        if yonlendirici is not None:
+            return yonlendirici
+        try:
+            gerec = gerec.parentWidget()
+        except RuntimeError:            # gereç bu arada silinmiş olabilir
+            return None
+    return None
+
+
+def _askida_calistir(parent: QWidget | None, pencere) -> int:
+    """Modal pencereyi okutma ASKIDAYKEN çalıştırır.
+
+    Modal bir ileti açıkken gelen okutma arkadaki sayfaya gidip satış ya da
+    stok kaydı oluşturamaz; anında "engellendi" olarak bildirilir. Çağıran
+    zaten askıya aldıysa jetonlar iç içe güvenle birikir.
+    """
+    with scanning_suspended(_yonlendirici(parent), reason="ileti penceresi"):
+        return pencere.exec()
+
+
 def show_error(parent: QWidget | None, message: str, detail: str = "") -> None:
     """Sade Türkçe hata. Teknik ayrıntı KULLANICIYA gösterilmez, log'a gider."""
     kutu = QMessageBox(parent)
@@ -55,7 +80,7 @@ def show_error(parent: QWidget | None, message: str, detail: str = "") -> None:
         kutu.setInformativeText(detail)
     kutu.setStandardButtons(QMessageBox.StandardButton.Ok)
     kutu.button(QMessageBox.StandardButton.Ok).setText("Tamam")
-    kutu.exec()
+    _askida_calistir(parent, kutu)
 
 
 def show_info(parent: QWidget | None, title: str, message: str) -> None:
@@ -65,7 +90,7 @@ def show_info(parent: QWidget | None, title: str, message: str) -> None:
     kutu.setText(message)
     kutu.setStandardButtons(QMessageBox.StandardButton.Ok)
     kutu.button(QMessageBox.StandardButton.Ok).setText("Tamam")
-    kutu.exec()
+    _askida_calistir(parent, kutu)
 
 
 def ask_confirm(
@@ -98,7 +123,7 @@ def ask_confirm(
         kutu.setDefaultButton(hayir)
     else:
         kutu.setDefaultButton(evet)
-    kutu.exec()
+    _askida_calistir(parent, kutu)
     return kutu.clickedButton() is evet
 
 

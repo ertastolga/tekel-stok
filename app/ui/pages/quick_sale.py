@@ -253,14 +253,13 @@ class QuickSalePage(Page):
                 product_id, quantity, barcode_used=barcode, multiplier=multiplier
             )
         except DomainError as hata:
-            self._fail(hata.message, hata.detail and "")
+            # Teknik ayrıntı kullanıcıya GÖSTERİLMEZ ama kaybolmaz: log'a yazılır.
+            log.warning("Hızlı satış reddedildi: %s | %s", hata.message, hata.detail)
+            self._fail(hata.message)
             return
-        except Exception as hata:
+        except Exception:
             log.exception("Hızlı satış tamamlanamadı")
-            self._fail(
-                "İşlem tamamlanamadı. Stok ve satış bilgileri değiştirilmedi.",
-                str(hata) and "",
-            )
+            self._fail("İşlem tamamlanamadı. Stok ve satış bilgileri değiştirilmedi.")
             return
 
         satir = sonuc.lines[0]
