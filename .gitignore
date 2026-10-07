@@ -11,3 +11,6 @@ dist/
 *.log
 dist/
 resources/icon.ico
+releases/
+!tests/fixtures/v1_1_ornek.db
+!tests/fixtures/v1_0_ornek.db

@@ -1,0 +1,24 @@
+{
+  "surum": "1.1",
+  "kaynak": "v1.1.0-rc1",
+  "app_agaci": "a8983c5cacaed94eac42b15fdb4d2f08ee590f06",
+  "sha256": "0d7f6fc2217e1729c93359c2ed99113b69904082976306b0787765aae2e49102",
+  "boyut": 364544,
+  "satir_sayilari": {
+    "products": 5,
+    "product_barcodes": 6,
+    "sales": 12,
+    "sale_items": 16,
+    "stock_movements": 25,
+    "purchase_receipts": 4,
+    "purchase_receipt_lines": 5,
+    "count_sessions": 1,
+    "cart_drafts": 1,
+    "cart_draft_lines": 2,
+    "price_history": 1,
+    "settings": 25
+  },
+  "schema_version": 1,
+  "toplam_ciro": 138000,
+  "toplam_stok_degeri": 257400
+}
