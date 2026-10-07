@@ -73,6 +73,25 @@ def services(db_file: Path, _sablon_db: Path):
     svc.close()
 
 
+FIXTURES = ROOT / "tests" / "fixtures"
+
+
+@pytest.fixture
+def v1_1_kopya(tmp_path: Path) -> Path:
+    """Gerçek V1.1 örnek veritabanının KOPYASI (örnek dosya asla yerinde açılmaz)."""
+    hedef = tmp_path / "v1_1_kopya.db"
+    shutil.copyfile(FIXTURES / "v1_1_ornek.db", hedef)
+    return hedef
+
+
+@pytest.fixture
+def v1_0_kopya(tmp_path: Path) -> Path:
+    """Gerçek V1.0 örnek veritabanının KOPYASI."""
+    hedef = tmp_path / "v1_0_kopya.db"
+    shutil.copyfile(FIXTURES / "v1_0_ornek.db", hedef)
+    return hedef
+
+
 @pytest.fixture
 def reopen(db_file: Path):
     """Bağlantıyı tamamen kapatıp diskten yeniden açar (kalıcılık testleri)."""
