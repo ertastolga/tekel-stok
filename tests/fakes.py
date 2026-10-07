@@ -96,3 +96,32 @@ class SiraliSahteEkran:
 
     def close(self) -> None:
         pass
+
+
+class SabitDuvarSaati:
+    """İlerletilebilir yerel duvar saati (``app.core.clock.use_clock`` için).
+
+    ``saat()`` çağrılabilir nesnesi sağlayıcı olarak verilir; ``git``/``ilerle``
+    ile zaman ileri alınır. Tekdüze saat de aynı nesneden türetilebilir.
+    """
+
+    def __init__(self, an=None) -> None:
+        from datetime import datetime
+
+        self.an = an or datetime(2026, 9, 1, 9, 0, 0)
+
+    def __call__(self):
+        return self.an
+
+    def git(self, yil, ay, gun, saat=12, dakika=0, saniye=0) -> None:
+        from datetime import datetime
+
+        self.an = datetime(yil, ay, gun, saat, dakika, saniye)
+
+    def ilerle(self, saniye: float = 1.0) -> None:
+        from datetime import timedelta
+
+        self.an = self.an + timedelta(seconds=saniye)
+
+    def tekduze(self) -> float:
+        return self.an.timestamp()

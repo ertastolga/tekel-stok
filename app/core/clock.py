@@ -21,6 +21,8 @@ sessizce yeniden yazar. Damgayı yazma anında dondurmak doğru olandır.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
@@ -30,14 +32,63 @@ from app.core.tr import DATE_FORMAT, TS_FORMAT
 BEGINNING_OF_TIME = "0001-01-01"
 DEFAULT_BUSINESS_DAY_START_HOUR = 0
 
+# --- Saat dikişi (clock seam) ---------------------------------------------
+# Üretimde HİÇ kullanılmaz: ikisi de ``None`` kalır ve gerçek saat okunur.
+# Testler ve sentetik veri üreteci, servisleri değiştirmeden zamanı
+# yönetebilsin diye sağlayıcı BURADA, işlevlerin İÇİNDE okunur; böylece
+# ``from app.core.clock import now_utc`` diye adla içe aktaran her modül de
+# otomatik olarak aynı saati görür.
+_yerel_saat: Callable[[], datetime] | None = None
+_tekduze_saat: Callable[[], float] | None = None
+
 
 def now_utc() -> int:
     """Epoch saniyesi (UTC). Sıralama için ASLA kullanılmaz — bkz. modül notu."""
+    if _yerel_saat is not None:
+        return int(_yerel_saat().timestamp())
     return int(time.time())
 
 
 def local_now() -> datetime:
+    if _yerel_saat is not None:
+        return _yerel_saat()
     return datetime.now()
+
+
+def monotonic() -> float:
+    """Süre ölçümü için tekdüze saat (saniye). Duvar saatinden bağımsızdır.
+
+    ``time.perf_counter`` kullanılır: Python 3.12'de Windows'ta
+    ``time.monotonic`` ~15,6 ms adımla ilerler.
+    """
+    if _tekduze_saat is not None:
+        return _tekduze_saat()
+    return time.perf_counter()
+
+
+@contextmanager
+def use_clock(
+    yerel: Callable[[], datetime] | None = None,
+    tekduze: Callable[[], float] | None = None,
+) -> Iterator[None]:
+    """Blok boyunca saati verilen sağlayıcılara bağlar; çıkışta geri alır."""
+    global _yerel_saat, _tekduze_saat
+    onceki = (_yerel_saat, _tekduze_saat)
+    if yerel is not None:
+        _yerel_saat = yerel
+    if tekduze is not None:
+        _tekduze_saat = tekduze
+    try:
+        yield
+    finally:
+        _yerel_saat, _tekduze_saat = onceki
+
+
+def reset_clock() -> None:
+    """Gerçek saate döner (testler arası güvence)."""
+    global _yerel_saat, _tekduze_saat
+    _yerel_saat = None
+    _tekduze_saat = None
 
 
 @dataclass(frozen=True, slots=True)

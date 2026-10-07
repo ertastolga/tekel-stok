@@ -31,7 +31,7 @@ from datetime import datetime
 from pathlib import Path
 
 from app import config
-from app.core.clock import now_utc
+from app.core.clock import local_now, now_utc
 from app.core.db import Database
 from app.core.errors import YedekHatasi, YedekOkunamadi
 from app.core.schema import SCHEMA_VERSION
@@ -89,7 +89,7 @@ class BackupService:
 
     def _new_path(self, folder: Path, prefix: str) -> Path:
         folder.mkdir(parents=True, exist_ok=True)
-        damga = datetime.now().strftime("%Y%m%d_%H%M%S")
+        damga = local_now().strftime("%Y%m%d_%H%M%S")
         aday = folder / f"{prefix}{damga}{config.BACKUP_SUFFIX}"
         sayac = 1
         while aday.exists():

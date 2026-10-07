@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.core import clock  # noqa: E402
 from app.core.db import Database, open_database  # noqa: E402
 from app.services.container import Services, build_services  # noqa: E402
 
@@ -28,6 +29,23 @@ def isolated_data_dir(tmp_path: Path, monkeypatch):
     """Her test kendi veri klasöründe çalışır."""
     monkeypatch.setenv("TEKEL_DATA_DIR", str(tmp_path / "veri"))
     return tmp_path / "veri"
+
+
+@pytest.fixture(autouse=True)
+def gercek_saate_don():
+    """Hiçbir test sabitlenmiş bir saati sonraki teste sızdıramaz."""
+    yield
+    clock.reset_clock()
+
+
+@pytest.fixture
+def duvar_saati():
+    """Sabit, ilerletilebilir saat; test boyunca TÜM servisler onu görür."""
+    from fakes import SabitDuvarSaati
+
+    saat = SabitDuvarSaati()
+    with clock.use_clock(yerel=saat, tekduze=saat.tekduze):
+        yield saat
 
 
 @pytest.fixture
