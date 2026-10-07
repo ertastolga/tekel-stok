@@ -35,44 +35,8 @@ from app.ui.main_window import MainWindow  # noqa: E402
 BIRA = "8690504001492"
 
 
-@pytest.fixture(scope="module")
-def qapp():
-    app = QApplication.instance() or QApplication([])
-    theme.apply_theme(app)
-    yield app
-
-
-def close_window(win, qapp) -> None:
-    """Pencereyi GERÇEKTEN yok eder (bkz. tests/test_ui.py)."""
-    win.close()
-    win.deleteLater()
-    qapp.processEvents()
-    qapp.sendPostedEvents(None, QEvent.Type.DeferredDelete)
-    qapp.processEvents()
-
-
-@pytest.fixture(autouse=True)
-def kip_pencereler_kapali(monkeypatch):
-    """Modal pencereler testte açılmaz; varsayılan 'Vazgeç' sayılır."""
-    monkeypatch.setattr(QMessageBox, "exec", lambda self: QMessageBox.StandardButton.Ok)
-    monkeypatch.setattr(QDialog, "exec", lambda self: QDialog.DialogCode.Rejected)
-
-
-@pytest.fixture
-def window(qapp, services, bira):
-    services.inventory.set_initial_stock(bira, 48, unit_cost=5000)
-    win = MainWindow(services)
-    win.show()
-    qapp.processEvents()
-    yield win
-    close_window(win, qapp)
-
-
-@pytest.fixture
-def sayfa(window, qapp):
-    window.go_to("sepetli_satis")
-    qapp.processEvents()
-    return window.pages["sepetli_satis"]
+from ui_support import *  # noqa: E402,F401,F403
+from fakes import SiraliSahteEkran  # noqa: E402
 
 
 # ===================== Sepet ve miktar denetimleri =======================
@@ -382,20 +346,7 @@ def test_inventory_tracked_satista_stok_uyarisi_gosterir(
 
 
 # ===================== Müşteri ekranı sıralaması =========================
-class SiraliSahteEkran:
-    """Çağrıları SIRAYLA kaydeden sahte ekran."""
 
-    def __init__(self) -> None:
-        self.cagrilar: list[tuple[str, int | None]] = []
-
-    def show_total(self, kurus: int) -> None:
-        self.cagrilar.append(("total", kurus))
-
-    def show_idle(self) -> None:
-        self.cagrilar.append(("idle", None))
-
-    def close(self) -> None:
-        pass
 
 
 def test_ekran_son_tutari_ATLAMAZ(sayfa, qapp, services, bira):

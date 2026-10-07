@@ -24,42 +24,7 @@ BIRA = "8690504001492"
 KOLI = "8690504001508"
 
 
-@pytest.fixture(scope="module")
-def qapp():
-    app = QApplication.instance() or QApplication([])
-    theme.apply_theme(app)
-    yield app
-
-
-def close_window(win, qapp) -> None:
-    """Pencereyi GERÇEKTEN yok eder.
-
-    ``deleteLater()`` yalnızca bir DeferredDelete olayı kuyruğa alır ve
-    ``processEvents()`` bu türü İŞLEMEZ. Yüzlerce arayüz testi boyunca
-    kapatılan her pencere bellekte kalır; süit giderek yavaşlar.
-    """
-    win.close()
-    win.deleteLater()
-    qapp.processEvents()
-    qapp.sendPostedEvents(None, QEvent.Type.DeferredDelete)
-    qapp.processEvents()
-
-
-@pytest.fixture(autouse=True)
-def kip_pencereler_kapali(monkeypatch):
-    """Modal pencereler testte açılmaz; varsayılan olarak 'Vazgeç' sayılır."""
-    monkeypatch.setattr(QMessageBox, "exec", lambda self: QMessageBox.StandardButton.Ok)
-    monkeypatch.setattr(QDialog, "exec", lambda self: QDialog.DialogCode.Rejected)
-
-
-@pytest.fixture
-def window(qapp, services, bira):
-    services.inventory.set_initial_stock(bira, 48, unit_cost=5000)
-    win = MainWindow(services)
-    win.show()
-    qapp.processEvents()
-    yield win
-    close_window(win, qapp)
+from ui_support import *  # noqa: E402,F401,F403
 
 
 # ===================== Açılış ============================================

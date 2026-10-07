@@ -15,19 +15,7 @@ import pytest
 from app.scanner.scan_event import ScanEvent
 from app.scanner.scan_router import RouterMode, ScanOutcome, ScanRouter
 from app.services.scan_guard import ScanGuard
-
-
-class SahteSaat:
-    """İlerletilebilir tekdüze saat (saniye cinsinden)."""
-
-    def __init__(self) -> None:
-        self.now = 1000.0
-
-    def __call__(self) -> float:
-        return self.now
-
-    def advance(self, ms: float) -> None:
-        self.now += ms / 1000.0
+from fakes import SahteSaat
 
 
 @pytest.fixture

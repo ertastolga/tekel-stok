@@ -20,6 +20,7 @@ from app.hardware.customer_display import (
 from app.payments.base import FailureKind, PaymentRequest, PaymentResult
 from app.payments.service import PaymentService
 from app.services.cart_service import Cart
+from fakes import PatlayanAdaptor, RedAdaptor, SahteEkran, ZamanAsimiAdaptor  # noqa: E402
 
 BIRA = "8690504001492"
 
@@ -289,42 +290,6 @@ def test_karsilastirma_uc_donem_doner(services):
 
 
 # ===================== Ödeme adaptörü ====================================
-class PatlayanAdaptor:
-    name = "patlak"
-    supports_void = False
-
-    def authorize(self, request: PaymentRequest) -> PaymentResult:
-        raise RuntimeError("terminal kablosu çıktı")
-
-    def void(self, reference: str) -> PaymentResult:  # pragma: no cover
-        raise RuntimeError("olmaz")
-
-
-class ZamanAsimiAdaptor:
-    name = "yavas"
-    supports_void = False
-
-    def authorize(self, request: PaymentRequest) -> PaymentResult:
-        raise TimeoutError("terminal yanıt vermedi")
-
-    def void(self, reference: str) -> PaymentResult:  # pragma: no cover
-        raise RuntimeError("olmaz")
-
-
-class RedAdaptor:
-    name = "red"
-    supports_void = False
-
-    def authorize(self, request: PaymentRequest) -> PaymentResult:
-        return PaymentResult(
-            approved=False, method=request.method, amount=request.amount,
-            message="Kart reddedildi.", failure_kind=FailureKind.DECLINED,
-        )
-
-    def void(self, reference: str) -> PaymentResult:  # pragma: no cover
-        raise RuntimeError("olmaz")
-
-
 def test_manuel_adaptorler_aninda_onaylar():
     servis = PaymentService()
     for yontem in (PaymentMethod.CASH, PaymentMethod.CARD):
@@ -415,27 +380,6 @@ def test_odeme_onayi_commit_ten_ONCE_alinir(services, bira):
 
 
 # ===================== Müşteri ekranı ====================================
-class SahteEkran:
-    """Çağrıları SIRAYLA kaydeden sahte ekran."""
-
-    def __init__(self, patlasin: bool = False) -> None:
-        self.cagrilar: list[tuple[str, int | None]] = []
-        self.patlasin = patlasin
-
-    def show_total(self, kurus: int) -> None:
-        self.cagrilar.append(("total", kurus))
-        if self.patlasin:
-            raise OSError("COM portu yok")
-
-    def show_idle(self) -> None:
-        self.cagrilar.append(("idle", None))
-        if self.patlasin:
-            raise OSError("COM portu yok")
-
-    def close(self) -> None:
-        self.cagrilar.append(("close", None))
-
-
 def test_null_ekran_sessizdir():
     ekran = CustomerDisplayService(NullCustomerDisplay())
     ekran.show_total(1000)

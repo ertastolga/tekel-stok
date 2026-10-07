@@ -9,6 +9,7 @@ test kullanıcının gerçek verisine, log'una ya da Belgeler klasörüne dokuna
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -34,19 +35,40 @@ def db_file(tmp_path: Path) -> Path:
     return tmp_path / "test_tekelstok.db"
 
 
+@pytest.fixture(scope="session")
+def _sablon_db(tmp_path_factory) -> Path:
+    """Göçleri uygulanmış, tohumlanmış BOŞ veritabanı — oturumda bir kez.
+
+    ``db`` ve ``services`` bunu kendi dosyalarına KOPYALAR: her testte v1
+    şemasını ve tohumlamayı (fsync'li) yeniden çalıştırmak süiti yavaşlatır.
+    Göç testleri ``db_file`` ile TAZE dosya kullanmaya devam eder.
+    """
+    yol = tmp_path_factory.mktemp("sablon") / "sablon.db"
+    open_database(yol).close()
+    for son_ek in ("-wal", "-shm"):
+        assert not Path(str(yol) + son_ek).exists()
+    return yol
+
+
+def _sablondan(db_file: Path, sablon: Path) -> Path:
+    if not db_file.exists():
+        shutil.copyfile(sablon, db_file)
+    return db_file
+
+
 @pytest.fixture
-def db(db_file: Path):
+def db(db_file: Path, _sablon_db: Path):
     """Açık, göçleri uygulanmış bir veritabanı."""
-    database = open_database(db_file)
+    database = open_database(_sablondan(db_file, _sablon_db))
     yield database
     if database.is_open:
         database.close()
 
 
 @pytest.fixture
-def services(db_file: Path):
+def services(db_file: Path, _sablon_db: Path):
     """Tam servis kabı, kendi geçici veritabanıyla."""
-    svc = build_services(open_database(db_file))
+    svc = build_services(open_database(_sablondan(db_file, _sablon_db)))
     yield svc
     svc.close()
 
