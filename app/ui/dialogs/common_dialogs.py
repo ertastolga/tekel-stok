@@ -118,7 +118,7 @@ def ask_confirm(
     if danger:
         evet.setObjectName("danger")
         evet.setStyleSheet(
-            f"background: {theme.DANGER}; color: #FFFFFF; font-weight: 600;"
+            f"background: {theme.DANGER}; color: {theme.ON_ACCENT}; font-weight: 600;"
         )
         kutu.setDefaultButton(hayir)
     else:

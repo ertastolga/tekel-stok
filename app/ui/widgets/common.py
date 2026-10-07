@@ -170,10 +170,14 @@ class SaleFlash(QFrame):
         title: str,
         name: str,
         line: str = "",
-        border: str = theme.PRIMARY,
-        background: str = theme.PRIMARY_LIGHT,
-        duration_ms: int = metrics.SALE_FLASH_MS,
+        border: str | None = None,
+        background: str | None = None,
+        duration_ms: int | None = None,
     ) -> None:
+        # Varsayılanlar ÇAĞRI ANINDA okunur: açılışta seçilen tema/ölçü geçerli olsun.
+        border = border or theme.PRIMARY
+        background = background or theme.PRIMARY_LIGHT
+        duration_ms = metrics.SALE_FLASH_MS if duration_ms is None else duration_ms
         self.setStyleSheet(
             f"#saleFlash {{ border: 2px solid {border}; background: {background}; }}"
             f"#flashName {{ color: {border}; }}"
