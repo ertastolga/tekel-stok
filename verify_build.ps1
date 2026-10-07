@@ -9,10 +9,36 @@
 #
 # NOT: Bu dosya UTF-8 BOM ile kaydedilmelidir; aksi halde PowerShell 5.1 onu
 # ANSI okur ve Turkce karsilastirmalar bozulur.
+#
+# Kullanim:
+#   powershell -ExecutionPolicy Bypass -File verify_build.ps1 [-ExePath <exe>]
+# -ExePath verilmezse en yeni dist\TekelStok-*\TekelStok.exe dogrulanir
+# (yoksa dist\TekelStok\TekelStok.exe).
+#
+# GUVENLIK: Bu makinede sahibin CANLI kasa uygulamasi calisiyor olabilir.
+# Betik baska bir TekelStok sureci aciksa HIC baslamaz ve yalnizca KENDI
+# baslattigi surecleri (PID ile) kapatir; adi TekelStok olan her sureci
+# oldurmez. Tum calistirmalar gecici --data-dir klasorleri kullanir.
+
+param([string]$ExePath = "")
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ExePath = Join-Path $ProjectRoot "dist\TekelStok\TekelStok.exe"
+if (-not $ExePath) {
+    $aday = Get-ChildItem -Path (Join-Path $ProjectRoot "dist") -Directory `
+        -Filter "TekelStok-*" -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        ForEach-Object { Join-Path $_.FullName "TekelStok.exe" } |
+        Where-Object { Test-Path $_ } | Select-Object -First 1
+    if ($aday) { $ExePath = $aday } else { $ExePath = Join-Path $ProjectRoot "dist\TekelStok\TekelStok.exe" }
+}
+
+$calisan = Get-Process -Name "TekelStok" -ErrorAction SilentlyContinue
+if ($null -ne $calisan) {
+    Write-Output "[DURDURULDU] Bir TekelStok sureci zaten calisiyor (PID: $(@($calisan).Id -join ', '))."
+    Write-Output "Canli kasaya dokunmamak icin dogrulama baslatilmadi. Uygulamayi kapatip tekrar deneyin."
+    exit 2
+}
 
 $script:Failures = 0
 
@@ -89,7 +115,7 @@ Test-Step "Ana pencere acildi" ($null -ne $titled) `
 # konumu kaydedilsin. Zorla oldurmek bu yollari HIC denemez.
 $closed = $app.CloseMainWindow()
 if (-not $app.WaitForExit(15000)) {
-    Get-Process -Name "TekelStok" -ErrorAction SilentlyContinue | Stop-Process -Force
+    Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
 }
 Test-Step "Uygulama duzgun kapandi" $closed
 Start-Sleep -Seconds 2
@@ -113,7 +139,7 @@ Test-Step "Ikinci acilis basarili" ($null -ne $titled2)
 
 $app2.CloseMainWindow() | Out-Null
 if (-not $app2.WaitForExit(15000)) {
-    Get-Process -Name "TekelStok" -ErrorAction SilentlyContinue | Stop-Process -Force
+    Stop-Process -Id $app2.Id -Force -ErrorAction SilentlyContinue
 }
 Start-Sleep -Seconds 2
 

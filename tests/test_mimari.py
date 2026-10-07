@@ -163,3 +163,20 @@ def test_ornek_ureteci_guvensiz_klasorde_calismaz(gercegi_goster, tmp_path):
     assert "REDDEDILDI" in (sonuc.stdout + sonuc.stderr)
     assert not cikti.exists()
     assert not (tmp_path / "Yerel").exists()
+
+
+# ===================== Dağıtılmış V1.1'in korunması =======================
+def test_derleme_dagitilmis_v1_1_klasorune_yazmayi_reddeder(monkeypatch):
+    """V1.2 derlemesi sahibin kullandığı dist/TekelStok'u asla ezmez (plan §2)."""
+    import build_exe
+
+    for korunan in ("TekelStok", "TekelStok_tasinabilir.zip", "TekelStok.exe"):
+        assert build_exe.korumali_mi(build_exe.DIST / korunan)
+    assert not build_exe.korumali_mi(build_exe.DIST / "TekelStok-1.2.0b1")
+    assert build_exe.varsayilan_cikti_adi().startswith("TekelStok-")
+
+    monkeypatch.setattr(sys, "argv", ["build_exe.py", "--out", "TekelStok", "--skip-tests"])
+    cagrildi = []
+    monkeypatch.setattr(build_exe, "run_pyinstaller", lambda *a, **k: cagrildi.append(a))
+    assert build_exe.main() == 2
+    assert cagrildi == [], "reddedilen hedef için derleme başlamamalı"

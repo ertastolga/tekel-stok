@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "Tekel Stok"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.2.0.dev0"
 APP_DIR_NAME = "TekelStok"          # diskteki klasör adı — ASCII kalmalı
 DB_FILE_NAME = "tekelstok.db"
 
