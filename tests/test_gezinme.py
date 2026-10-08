@@ -162,3 +162,29 @@ def test_ana_ekran_sepetli_satisi_birincil_gosterir(window):
     assert ana.quick_card.objectName() == "actionCard"
     ana.entry_card.click()
     assert window._current_key == "stok_girisi"
+
+
+def test_sayfalar_ilk_gosterildiklerinde_kurulur(qapp, services, bira):
+    """Açılışta yalnızca açılış sayfası kurulur; ayar uygulama ve kapanış
+    hazırlığı kurulmamış sayfaları kurmaz; okutma, sonradan kurulan sayfaya da
+    ulaşır."""
+    from app.scanner.scan_event import ScanEvent
+
+    win = MainWindow(services)
+    try:
+        assert set(win.pages.hazir()) == {"sepetli_satis"}
+        assert "ayarlar" in win.pages and len(win.pages) == 12
+        win.apply_settings()
+        assert set(win.pages.hazir()) == {"sepetli_satis"}
+        win.go_to("hizli_satis")
+        assert set(win.pages.hazir()) == {"sepetli_satis", "hizli_satis"}
+        win.router.dispatch(ScanEvent(code="8690504001492"))
+        qapp.processEvents()
+        assert services.db.scalar("SELECT COUNT(*) FROM sales") == 1
+        for anahtar in win.nav_buttons:
+            assert anahtar in win.pages
+    finally:
+        close_window(win, qapp)
+    assert set(win.pages.hazir()) == {"sepetli_satis", "hizli_satis"}, (
+        "kapanış kurulmamış sayfa kurmadı"
+    )

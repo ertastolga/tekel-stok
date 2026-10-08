@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import logging
+from collections.abc import Mapping
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
@@ -41,6 +42,43 @@ from app.ui import metrics, shortcuts, sound, theme
 from app.ui.widgets.common import make_label
 
 log = logging.getLogger(__name__)
+
+class TembelSayfalar(Mapping):
+    """Sayfalar İLK gösterildiklerinde kurulur (açılış süresi ve bellek).
+
+    Menü düğmeleri sınıf özniteliklerinden (``nav_key``, ``nav_title``,
+    ``nav_group``) kurulur; sayfanın kendisi ``pages[key]`` ile ilk kez
+    istendiğinde oluşturulur. ``hazir()`` yalnızca kurulmuş sayfaları verir
+    (ayar uygulama, kapanış hazırlığı gibi işler kurulmamış sayfayı
+    gereksiz yere kurmasın).
+    """
+
+    def __init__(self, kurucu, siniflar: dict[str, type]) -> None:
+        self._kurucu = kurucu
+        self._siniflar = siniflar
+        self._hazir: dict[str, object] = {}
+
+    def __getitem__(self, anahtar: str):
+        if anahtar not in self._hazir:
+            sinif = self._siniflar[anahtar]          # KeyError: bilinmeyen sayfa
+            self._hazir[anahtar] = self._kurucu(sinif)
+        return self._hazir[anahtar]
+
+    def __iter__(self):
+        return iter(self._siniflar)
+
+    def __len__(self) -> int:
+        return len(self._siniflar)
+
+    def __contains__(self, anahtar) -> bool:
+        return anahtar in self._siniflar
+
+    def hazir(self) -> dict[str, object]:
+        return dict(self._hazir)
+
+    def sinif(self, anahtar: str) -> type:
+        return self._siniflar[anahtar]
+
 
 NAV_GROUPS = (
     ("kasa", "KASA"),
@@ -181,18 +219,14 @@ class MainWindow(QMainWindow):
             SettingsPage, BarcodeTestPage,
         ]
 
-        self.pages: dict[str, object] = {}
+        self.pages = TembelSayfalar(
+            self._build_page, {sinif.nav_key: sinif for sinif in sinifler}
+        )
         self._current_key: str | None = None
         gruplar: dict[str, list] = {anahtar: [] for anahtar, _ in NAV_GROUPS}
-
         for sinif in sinifler:
-            sayfa = sinif(self.services, self)
-            self.pages[sayfa.nav_key] = sayfa
-            self.stack.addWidget(sayfa)
-            if sayfa.accepts_scans:
-                self.router.register(sayfa.nav_key, sayfa.handle_scan)
-            if sayfa.nav_group in gruplar:
-                gruplar[sayfa.nav_group].append(sayfa)
+            if sinif.nav_group in gruplar:
+                gruplar[sinif.nav_group].append(sinif)
 
         # Ana ekran her zaman en üstte, grupsuz.
         self._add_nav_button("ana_ekran", "🏠  Ana Ekran")
@@ -213,6 +247,14 @@ class MainWindow(QMainWindow):
                 self.nav_page_group[sayfa.nav_key] = anahtar
         self.nav_layout.addStretch(1)
         self.apply_nav_visibility()
+
+    def _build_page(self, sinif):
+        """Sayfayı ilk istendiğinde kurar, yığına ve yönlendiriciye ekler."""
+        sayfa = sinif(self.services, self)
+        self.stack.addWidget(sayfa)
+        if sayfa.accepts_scans:
+            self.router.register(sayfa.nav_key, sayfa.handle_scan)
+        return sayfa
 
     def _add_nav_button(self, key: str, title: str) -> None:
         dugme = QPushButton(title)
@@ -384,7 +426,9 @@ class MainWindow(QMainWindow):
         self.refresh_pin_notice()
 
     def current_page(self):
-        return self.pages.get(self._current_key or "")
+        if self._current_key is None:
+            return None
+        return self.pages[self._current_key]
 
     def _go_back(self) -> None:
         """Esc: önce açık katmanı kapatır; yoksa ana ekrana döner."""
@@ -499,7 +543,7 @@ class MainWindow(QMainWindow):
         sound.set_enabled(self.services.settings.sound_enabled())
         self.scan_guard.set_window(self.services.settings.duplicate_scan_ms())
         self.apply_nav_visibility()
-        for sayfa in self.pages.values():
+        for sayfa in self.pages.hazir().values():
             if hasattr(sayfa, "apply_settings"):
                 try:
                     sayfa.apply_settings()
@@ -541,7 +585,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802
         # Sayfalar bekleyen işlerini (ör. sepet taslağı) diske yazar.
-        for anahtar, sayfa in self.pages.items():
+        for anahtar, sayfa in self.pages.hazir().items():
             try:
                 sayfa.on_app_closing()
             except Exception:
