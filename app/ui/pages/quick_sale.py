@@ -292,9 +292,9 @@ class QuickSalePage(KatmanSahibi, Page):
 
         pencere = None
 
-        def engellendi(_event):
+        def engellendi(event):
             if pencere is not None:
-                pencere.notify_blocked()
+                pencere.notify_blocked(event)
 
         with scanning_suspended(self.main_window.router, engellendi):
             pencere = UnknownBarcodeDialog(raw, self.services, self)
@@ -304,8 +304,12 @@ class QuickSalePage(KatmanSahibi, Page):
         if urun_id is None:
             self._show_ready()
             return
-        # Ürün açıkça kaydedildi: barkodu TEKRAR okutmaya gerek yok.
-        self._commit(urun_id, 1, raw, 1)
+        # Ürün açıkça kaydedildi: barkodu TEKRAR okutmaya gerek yok; barkod
+        # yeniden çözülür (koli/paket çarpanı uygulanır).
+        if self.services.barcodes.resolve(raw) is not None:
+            self._sell(raw)
+        else:
+            self._commit(urun_id, 1, None, 1)
 
     def _commit(self, product_id: int, quantity: int, barcode: str, multiplier: int) -> None:
         try:

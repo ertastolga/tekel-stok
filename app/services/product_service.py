@@ -10,13 +10,15 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
+from dataclasses import dataclass, field
 
 from app.core import quantity as qty
 from app.core.clock import now_utc
 from app.core.db import Database
-from app.core.errors import GecersizUrunAdi
+from app.core.errors import GecersizFiyat, GecersizUrunAdi, KategoriGerekli
 from app.core.models import BarcodeType, StockState
 from app.core.tr import normalize_name, search_matches
 
@@ -28,6 +30,37 @@ _CLONE_FIELDS = (
     "brand_id", "category_id", "family_id", "unit_label", "package_type",
     "size_unit", "vat_rate", "min_stock", "critical_stock", "default_supplier_id",
 )
+
+
+@dataclass
+class YeniUrun:
+    """Hızlı Ürün Ekle formunun tamamı — TEK işlemde kaydedilir."""
+
+    name: str
+    sale_price: int
+    category_id: int | None
+    barcode: str | None = None
+    barcode_type: str = BarcodeType.UNIT
+    multiplier: int = 1
+    #: Ek barkodlar: (barkod, tür, çarpan) — alternatif / paket / koli.
+    extra_barcodes: list[tuple[str, str, int]] = field(default_factory=list)
+    brand_name: str | None = None
+    family_name: str | None = None
+    tags: list[str] = field(default_factory=list)
+    supplier_id: int | None = None
+    vat_rate: int | None = None
+    #: Katalog / referans alış fiyatı (stok değerine ASLA girmez).
+    reference_cost: int | None = None
+    #: Başlangıç stoğu ve (biliniyorsa) birim maliyeti.
+    initial_stock: int | None = None
+    initial_cost: int | None = None
+    location_id: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AktiflestirmeSonucu:
+    acilan_barkodlar: list[str]
+    acilamayan_barkodlar: list[str]
 
 
 class ProductService:
@@ -434,34 +467,190 @@ class ProductService:
             (product_id, max(1, min(200, limit))),
         )
 
-    def set_active(self, product_id: int, active: bool) -> None:
+    def set_active(self, product_id: int, active: bool) -> AktiflestirmeSonucu | None:
         """Ürünü pasife alır ya da geri açar.
 
         Geçmişi olan ürün SİLİNMEZ: eski satışlar, maliyetler ve stok
         hareketleri olduğu gibi durur. Pasif ürünün etkin barkodları da
-        kapatılır ki kasada yanlışlıkla okunmasın.
+        kapatılır ki kasada yanlışlıkla okunmasın — hangi barkodların
+        kapatıldığı denetim kaydına yazılır. Yeniden açılırken BU barkodlar,
+        bu arada başka bir ürüne verilmemişlerse geri açılır (V1.1 kusuru D-08:
+        barkodlar geri gelmiyor, okutulunca çift ürün açtırılıyordu).
         """
+        if active:
+            return self.reactivate(product_id)
         now = now_utc()
         with self.db.transaction() as conn:
             row = conn.execute(
                 "SELECT name FROM products WHERE id = ?", (product_id,)
             ).fetchone()
             conn.execute(
-                "UPDATE products SET is_active = ?, updated_at_utc = ? WHERE id = ?",
-                (int(bool(active)), now, product_id),
+                "UPDATE products SET is_active = 0, updated_at_utc = ? WHERE id = ?",
+                (now, product_id),
             )
-            if not active:
-                conn.execute(
-                    "UPDATE product_barcodes SET active = 0, deactivated_at_utc = ? "
-                    " WHERE product_id = ? AND active = 1",
-                    (now, product_id),
-                )
+            kapatilan = [
+                r["id"] for r in conn.execute(
+                    "SELECT id FROM product_barcodes WHERE product_id = ? AND active = 1",
+                    (product_id,),
+                ).fetchall()
+            ]
+            conn.execute(
+                "UPDATE product_barcodes SET active = 0, deactivated_at_utc = ? "
+                " WHERE product_id = ? AND active = 1",
+                (now, product_id),
+            )
             if row:
                 self.audit.record(
-                    "URUN_DURUM",
-                    f"{row['name']} {'yeniden kullanıma alındı' if active else 'pasife alındı'}.",
-                    "product", product_id, conn=conn,
+                    "URUN_DURUM", f"{row['name']} pasife alındı.",
+                    "product", product_id, details={"barkodlar": kapatilan}, conn=conn,
                 )
+        return None
+
+    def reactivate(self, product_id: int) -> AktiflestirmeSonucu:
+        """Ürünü yeniden kullanıma alır; pasife alınırken kapatılan barkodları
+        (başka bir üründe etkin değilse) geri açar."""
+        now = now_utc()
+        acilan: list[str] = []
+        acilamayan: list[str] = []
+        with self.db.transaction() as conn:
+            row = conn.execute(
+                "SELECT name FROM products WHERE id = ?", (product_id,)
+            ).fetchone()
+            conn.execute(
+                "UPDATE products SET is_active = 1, updated_at_utc = ? WHERE id = ?",
+                (now, product_id),
+            )
+            for barkod in self._pasiflestirmede_kapanan(conn, product_id):
+                cakisan = conn.execute(
+                    "SELECT 1 FROM product_barcodes WHERE active = 1 AND ("
+                    "  barcode_norm = ? OR (? IS NOT NULL AND gtin14 = ?))",
+                    (barkod["barcode_norm"], barkod["gtin14"], barkod["gtin14"]),
+                ).fetchone()
+                if cakisan:
+                    acilamayan.append(barkod["barcode"])
+                    continue
+                conn.execute(
+                    "UPDATE product_barcodes SET active = 1, deactivated_at_utc = NULL "
+                    " WHERE id = ?", (barkod["id"],),
+                )
+                acilan.append(barkod["barcode"])
+            if row:
+                self.audit.record(
+                    "URUN_DURUM", f"{row['name']} yeniden kullanıma alındı.",
+                    "product", product_id,
+                    details={"acilan": acilan, "acilamayan": acilamayan}, conn=conn,
+                )
+        return AktiflestirmeSonucu(acilan, acilamayan)
+
+    def _pasiflestirmede_kapanan(self, conn, product_id: int) -> list[sqlite3.Row]:
+        """Son pasife almada kapatılan barkodlar.
+
+        V1.2 kaydı denetim satırındaki listeyi kullanır; V1.1'den gelen kayıtta
+        aynı anda (aynı saniye) kapatılan en son barkod grubu alınır.
+        """
+        son = conn.execute(
+            "SELECT details_json FROM audit_log WHERE action = 'URUN_DURUM' "
+            "   AND entity_type = 'product' AND entity_id = ? "
+            " ORDER BY id DESC LIMIT 1",
+            (product_id,),
+        ).fetchone()
+        if son is not None and son["details_json"]:
+            kimlikler = json.loads(son["details_json"]).get("barkodlar")
+            if kimlikler is not None:
+                if not kimlikler:
+                    return []
+                yer = ",".join("?" * len(kimlikler))
+                return conn.execute(
+                    f"SELECT * FROM product_barcodes WHERE id IN ({yer}) AND active = 0",
+                    kimlikler,
+                ).fetchall()
+        en_son = conn.execute(
+            "SELECT MAX(deactivated_at_utc) FROM product_barcodes "
+            " WHERE product_id = ? AND active = 0", (product_id,),
+        ).fetchone()[0]
+        if en_son is None:
+            return []
+        return conn.execute(
+            "SELECT * FROM product_barcodes WHERE product_id = ? AND active = 0 "
+            "   AND deactivated_at_utc = ?", (product_id, en_son),
+        ).fetchall()
+
+    # ===================== Hızlı Ürün Ekle (M4b) ==========================
+    def add_product(self, taslak: YeniUrun) -> int:
+        """Formun TAMAMINI tek işlemde kaydeder; herhangi bir hata hepsini geri alır.
+
+        Kategori ZORUNLUDUR; satış fiyatı sıfırdan büyük olmalıdır. Alış
+        fiyatı stokla birlikte verildiyse açılış stoğunun maliyetidir; stoksuz
+        verildiyse yalnızca REFERANS (katalog) alış fiyatıdır — stok değerine,
+        "son alış"a ve maliyet kapsamına ASLA girmez.
+        """
+        ad = (taslak.name or "").strip()
+        if not ad:
+            raise GecersizUrunAdi()
+        if taslak.sale_price is None or int(taslak.sale_price) <= 0:
+            raise GecersizFiyat("Satış fiyatı sıfırdan büyük olmalıdır.")
+        if taslak.category_id is None:
+            raise KategoriGerekli()
+        kategori = self.db.query_one(
+            "SELECT active FROM categories WHERE id = ?", (taslak.category_id,)
+        )
+        if kategori is None or not kategori["active"]:
+            raise KategoriGerekli()
+        if taslak.reference_cost is not None and taslak.reference_cost < 0:
+            raise GecersizFiyat("Alış fiyatı eksi olamaz.")
+
+        with self.db.transaction() as conn:
+            stoklu = taslak.initial_stock is not None and taslak.initial_stock > 0
+            extra: dict = {}
+            if taslak.supplier_id is not None:
+                extra["default_supplier_id"] = taslak.supplier_id
+            if taslak.vat_rate is not None:
+                extra["vat_rate"] = taslak.vat_rate
+            aile = self.catalog.ensure_family(taslak.family_name)
+            if aile is not None:
+                extra["family_id"] = aile
+            pid = self.quick_create(
+                ad,
+                sale_price=int(taslak.sale_price),
+                barcode=taslak.barcode or None,
+                initial_stock=taslak.initial_stock,
+                purchase_cost=taslak.initial_cost if stoklu else None,
+                category_id=taslak.category_id,
+                brand_name=taslak.brand_name,
+                location_id=taslak.location_id,
+                barcode_type=taslak.barcode_type,
+                multiplier=taslak.multiplier,
+                **extra,
+            )
+            for barkod, tur, carpan in taslak.extra_barcodes:
+                self.barcodes.add_barcode(pid, barkod, tur, carpan, conn=conn)
+            if taslak.tags:
+                etiketler = [self.catalog.ensure_tag(t) for t in taslak.tags]
+                conn.executemany(
+                    "INSERT INTO product_tags(product_id, tag_id) VALUES(?,?)",
+                    [(pid, t) for t in dict.fromkeys(e for e in etiketler if e)],
+                )
+            referans = taslak.reference_cost
+            if referans is None and not stoklu and taslak.initial_cost is not None:
+                referans = taslak.initial_cost
+            if referans is not None:
+                conn.execute(
+                    "UPDATE products SET reference_cost = ?, "
+                    "  reference_cost_updated_at_utc = ? WHERE id = ?",
+                    (int(referans), now_utc(), pid),
+                )
+            return pid
+
+    def set_reference_cost(self, product_id: int, cost: int | None) -> None:
+        """Referans (katalog) alış fiyatı. ``last_purchase_cost``'a DOKUNMAZ."""
+        if cost is not None and cost < 0:
+            raise GecersizFiyat("Alış fiyatı eksi olamaz.")
+        with self.db.transaction() as conn:
+            conn.execute(
+                "UPDATE products SET reference_cost = ?, reference_cost_updated_at_utc = ? "
+                " WHERE id = ?",
+                (cost, now_utc() if cost is not None else None, product_id),
+            )
 
     # ===================== Dikkat listeleri ==============================
     def attention_counts(self) -> dict[str, int]:

@@ -18,7 +18,7 @@ import sqlite3
 from app.core.clock import BEGINNING_OF_TIME, DEFAULT_BUSINESS_DAY_START_HOUR
 from app.core.tr import normalize_name
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 # =========================================================================
@@ -770,9 +770,19 @@ _V2_BEKLEYEN_SEPETLER = [
     "CREATE INDEX IF NOT EXISTS ix_cart_drafts_open ON cart_drafts(status, kind)",
 ]
 
+#: v3 (V1.2 M4b) — Referans (katalog) alış fiyatı. Gerçek alış geçmişi
+#: (``last_purchase_cost``) DEĞİLDİR: stok değerine, havuza ve maliyet
+#: kapsamına ASLA girmez. Mevcut ürünlerde NULL.
+_V3_REFERANS_MALIYET = [
+    "ALTER TABLE products ADD COLUMN reference_cost INTEGER "
+    "CHECK (reference_cost IS NULL OR reference_cost >= 0)",
+    "ALTER TABLE products ADD COLUMN reference_cost_updated_at_utc INTEGER",
+]
+
 #: Her göç ya SQL metni ya da ``conn`` alan bir fonksiyondur. Göçler bir kez
 #: işlendikten sonra DEĞİŞTİRİLMEZ; yalnızca yeni sürüm eklenir.
 MIGRATIONS: list[tuple[int, list]] = [
     (1, [*_V1_TABLES, *_V1_INDEXES, _v1_seed]),
     (2, _V2_BEKLEYEN_SEPETLER),
+    (3, _V3_REFERANS_MALIYET),
 ]

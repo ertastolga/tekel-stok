@@ -87,6 +87,12 @@ def test_pasif_ve_fiyatsiz_urun(fiyat, services, bira):
     fiyat.show_price_for(BIRA)
     assert "kullanımdan kaldırılmış" in fiyat.name_label.text()
     assert fiyat.price_label.text() == ""
+    # D-08 (M4b): Ürünler'den pasife alınan ürünün barkodu da tanınır.
+    services.db.execute("UPDATE products SET is_active = 1 WHERE id = ?", (bira,))
+    services.products.set_active(bira, False)
+    fiyat.show_price_for(BIRA)
+    assert "kullanımdan kaldırılmış" in fiyat.name_label.text()
+    assert fiyat.detail_label.text() == "Tuborg Gold 50 cl Kutu"
 
 
 def test_son_bes_kontrol(fiyat, services, bira):

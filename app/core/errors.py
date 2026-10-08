@@ -116,6 +116,13 @@ class PasifUrun(DomainError):
         super().__init__(f"{ad} kullanımdan kaldırılmış. Satılamaz.")
 
 
+class KategoriGerekli(DomainError):
+    """Hızlı ürün eklemede kategori ZORUNLUDUR (plan §7 M4b)."""
+
+    def __init__(self) -> None:
+        super().__init__("Kategori seçin. Ürünler kategorisiz eklenmez.")
+
+
 class GecersizUrunAdi(DomainError):
     def __init__(self) -> None:
         super().__init__("Ürün adı boş olamaz.")

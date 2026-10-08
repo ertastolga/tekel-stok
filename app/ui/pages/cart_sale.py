@@ -412,9 +412,10 @@ class CartSalePage(KatmanSahibi, Page):
 
         pencere = None
 
-        def engellendi(_event):
+        def engellendi(event):
+            # Pencere açıkken okutma: barkod alanı etkinse oraya yazılır.
             if pencere is not None:
-                pencere.notify_blocked()
+                pencere.notify_blocked(event)
 
         with scanning_suspended(self.main_window.router, engellendi):
             pencere = UnknownBarcodeDialog(raw, self.services, self)
@@ -422,7 +423,13 @@ class CartSalePage(KatmanSahibi, Page):
             urun_id = pencere.product_id if kabul else None
         if urun_id is None:
             return
-        self._add_product(urun_id, 1, raw, 1)
+        # Barkod YENİDEN çözülür: koli barkoduyla tanımlanan ürün, kolideki
+        # adet kadar eklenir (paket onayı dahil). Barkod ürüne bağlanmadıysa
+        # (ör. alan boşaltıldı) ürün 1 adet eklenir.
+        if self.services.barcodes.resolve(raw) is not None:
+            self._add_by_code(raw)
+        else:
+            self._add_product(urun_id, 1, None, 1)
 
     def _add_product(self, product_id: int, quantity: int, barcode: str | None,
                      multiplier: int) -> None:

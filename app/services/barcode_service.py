@@ -98,6 +98,26 @@ class BarcodeService:
                 row = self._lookup("gtin14", gtin, None)
         return row
 
+    def inactive_owner(self, raw: str) -> sqlite3.Row | None:
+        """Barkod ETKİN bir üründe değilse, kullanımdan kaldırılmış bir ürüne mi ait?
+
+        Pasife alınan ürünün barkodları da kapatılır; okutulduğunda "ürün
+        tanınmadı" deyip yeni (çift) ürün açtırmak yerine o ürün önerilir
+        (V1.1 kusuru D-08).
+        """
+        if self.owner_of(raw) is not None:
+            return None
+        norm = self.normalize(raw)
+        gtin = self.canonical(raw)
+        return self.db.query_one(
+            "SELECT p.id AS product_id, p.name, b.id AS barcode_id "
+            "  FROM product_barcodes b JOIN products p ON p.id = b.product_id "
+            " WHERE b.active = 0 AND p.is_active = 0 "
+            "   AND (b.barcode_norm = ? OR (? IS NOT NULL AND b.gtin14 = ?)) "
+            " ORDER BY COALESCE(b.deactivated_at_utc, 0) DESC, b.id DESC LIMIT 1",
+            (norm, gtin, gtin),
+        )
+
     # -- Yönetim -----------------------------------------------------------
     def barcodes_of(self, product_id: int, include_inactive: bool = False) -> list[sqlite3.Row]:
         sql = "SELECT * FROM product_barcodes WHERE product_id = ?"

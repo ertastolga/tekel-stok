@@ -84,6 +84,9 @@ class TouchDisplay(QLabel):
         self.setObjectName("touchDisplay")
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setMinimumHeight(metrics.TOUCH_TARGET_MIN)
+        # Uzun yer tutucu metin pencereyi GENİŞLETMEZ: gösterim yatayda
+        # kalan alanı alır (metin gerekirse kırpılır).
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         self._value = ""
         self._placeholder = placeholder

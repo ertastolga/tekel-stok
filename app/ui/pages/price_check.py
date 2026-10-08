@@ -125,7 +125,11 @@ class PriceCheckPage(Page):
             self._goster_hata(hata.message, raw)
             return
         if eslesme is None:
-            self._goster_hata("Ürün tanınmadı.", f"Barkod: {raw}")
+            sahip = self.services.barcodes.inactive_owner(raw)
+            if sahip is not None:
+                self._goster_hata("Bu ürün kullanımdan kaldırılmış.", sahip["name"])
+            else:
+                self._goster_hata("Ürün tanınmadı.", f"Barkod: {raw}")
             return
         if not eslesme.is_active:
             self._goster_hata("Bu ürün kullanımdan kaldırılmış.", eslesme.product_name)

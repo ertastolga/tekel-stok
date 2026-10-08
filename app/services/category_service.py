@@ -157,6 +157,17 @@ class CategoryService:
             ))
         return agac
 
+    def recent_for_products(self, limit: int = 5) -> list[sqlite3.Row]:
+        """Son eklenen ürünlerde kullanılan aktif kategoriler (hızlı seçim)."""
+        return self.db.query(
+            "SELECT c.* FROM categories c JOIN ("
+            "  SELECT category_id, MAX(id) AS son FROM products "
+            "   WHERE category_id IS NOT NULL GROUP BY category_id"
+            ") k ON k.category_id = c.id WHERE c.active = 1 "
+            " ORDER BY k.son DESC LIMIT ?",
+            (max(1, limit),),
+        )
+
     def uncategorized_count(self) -> int:
         return int(self.db.scalar(
             "SELECT COUNT(*) FROM products WHERE is_active = 1 AND category_id IS NULL",

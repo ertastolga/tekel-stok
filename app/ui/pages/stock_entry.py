@@ -226,18 +226,24 @@ class StockEntryPage(Page):
 
             pencere = None
 
-            def engellendi(_event):
+            def engellendi(event):
                 if pencere is not None:
-                    pencere.notify_blocked()
+                    pencere.notify_blocked(event)
 
             with scanning_suspended(self.main_window.router, engellendi):
-                pencere = UnknownBarcodeDialog(raw, self.services, self)
+                # Mal kabulde başlangıç stoğu sorulmaz: stok girişin kendisidir.
+                pencere = UnknownBarcodeDialog(raw, self.services, self, context="STOK")
                 kabul = pencere.exec()
                 urun_id = pencere.product_id if kabul else None
             if urun_id is None:
                 self.banner.show_error("Ürün tanınmadı.", f"Barkod: {raw}")
                 return
-            self._add_line(urun_id, 1, raw, 1)
+            eslesme = self.services.barcodes.resolve(raw)
+            if eslesme is not None:
+                self._add_line(eslesme.product_id, eslesme.quantity, eslesme.barcode,
+                               eslesme.multiplier)
+            else:
+                self._add_line(urun_id, 1, None, 1)
             return
 
         # Koli/paket barkodu burada SORULMADAN uygulanır: mal kabulünde
