@@ -32,7 +32,6 @@ KASA_KAYNAKLARI = ("sepetli_satis", "hizli_satis")
 #: Kaç son kontrol listelensin.
 SON_KONTROL = 5
 #: Fiyatın yazı boyutu (pt): karşıdan okunabilmeli.
-FIYAT_PT = 44.0
 
 
 class PriceCheckPage(Page):
@@ -72,10 +71,12 @@ class PriceCheckPage(Page):
         duzen.addWidget(self.mode_banner)
 
         kart = Card()
-        self.name_label = make_label("Ürünü okutun.", "sectionTitle", wrap=True,
+        # Boyutlar stil sayfasından (#priceCheckName / #priceCheckPrice): "*"
+        # kuralı setFont'u ezdiği için fiyat küçük çiziliyordu (M12b).
+        self.name_label = make_label("Ürünü okutun.", "priceCheckName", wrap=True,
                                      align=Qt.AlignmentFlag.AlignCenter)
-        self.price_label = make_label("", align=Qt.AlignmentFlag.AlignCenter)
-        self.price_label.setFont(theme.base_font(FIYAT_PT, bold=True))
+        self.price_label = make_label("", "priceCheckPrice",
+                                      align=Qt.AlignmentFlag.AlignCenter)
         self.detail_label = make_label("", "cardHint", wrap=True,
                                        align=Qt.AlignmentFlag.AlignCenter)
         kart.body.addWidget(self.name_label)

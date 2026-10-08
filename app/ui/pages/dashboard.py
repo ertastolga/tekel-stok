@@ -42,7 +42,7 @@ from app.analytics import donemler as dn
 from app.analytics import kar, sepetler
 from app.core.models import STOCK_STATE_LABELS, StockState
 from app.core.money import format_tl
-from app.core.tr import fmt_decimal_trim, fmt_percent
+from app.core.tr import fmt_date, fmt_decimal_trim, fmt_percent
 from app.services.analytics_service import AYLIK, GUNLUK, HAFTALIK, HAFTANIN_GUNU, SAATLIK
 from app.ui import metrics, theme
 from app.ui.pages.base import Page
@@ -51,6 +51,7 @@ from app.ui.widgets.common import (
     Badge,
     Card,
     EmptyState,
+    FlowLayout,
     PageHeader,
     StatCard,
     make_label,
@@ -123,7 +124,7 @@ class DashboardPage(Page):
         duzen.setContentsMargins(metrics.PAGE_MARGIN_H, 8, metrics.PAGE_MARGIN_H,
                                  metrics.PAGE_MARGIN_V)
         duzen.setSpacing(8)
-        duzen.addLayout(self._build_period_bar())
+        duzen.addWidget(self._build_period_bar())
         self.tabs = QTabWidget()
         for kurucu in (self._build_overview, self._build_trends, self._build_products,
                        self._build_baskets, self._build_payments, self._build_profit):
@@ -134,14 +135,17 @@ class DashboardPage(Page):
         self.root.addWidget(govde, 1)
 
     # ===================== Dönem çubuğu ==================================
-    def _build_period_bar(self) -> QHBoxLayout:
-        satir = QHBoxLayout()
-        satir.setSpacing(6)
+    def _build_period_bar(self) -> QWidget:
+        # Akış düzeni: dar pencerede (1000×600) dönem düğmeleri alt satıra iner;
+        # seçili dönem "segment" biçemiyle açıkça görünür (M12b).
+        kap = QWidget()
+        satir = FlowLayout(kap, spacing=6)
         self.period_group = QButtonGroup(self)
         self.period_group.setExclusive(True)
         self.period_buttons: dict[str, QPushButton] = {}
         for tur in DONEM_DUGMELERI:
             dugme = QPushButton(dn.DONEM_ADLARI[tur])
+            dugme.setObjectName("segment")
             dugme.setCheckable(True)
             dugme.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             dugme.clicked.connect(lambda _=False, t=tur: self.set_period(t))
@@ -156,8 +160,7 @@ class DashboardPage(Page):
             kutu.setProperty("scannerExempt", True)
             kutu.dateChanged.connect(lambda _d: self._ozel_degisti())
             satir.addWidget(kutu)
-        satir.addStretch(1)
-        return satir
+        return kap
 
     def set_period(self, tur: str, baslangic: str | None = None,
                    bitis: str | None = None) -> None:
@@ -178,8 +181,8 @@ class DashboardPage(Page):
         else:
             self._donem = self.services.analytics.donem(tur)
         self.header.set_subtitle(
-            f"{self._donem.ad or dn.DONEM_ADLARI[tur]} · {self._donem.baslangic}"
-            + (f" – {self._donem.bitis}" if self._donem.gun_sayisi > 1 else ""))
+            f"{self._donem.ad or dn.DONEM_ADLARI[tur]} · {fmt_date(self._donem.baslangic)}"
+            + (f" – {fmt_date(self._donem.bitis)}" if self._donem.gun_sayisi > 1 else ""))
         self._dolu.clear()
         self._sekmeyi_doldur()
 
@@ -619,7 +622,9 @@ class DashboardPage(Page):
         for tablo, ciftler in ((self.pairs_table, a.urun_ciftleri(self._donem, destek)),
                                (self.category_pairs_table,
                                 a.kategori_ciftleri(self._donem, destek))):
-            _doldur(tablo, [(f"{c.a_ad} + {c.b_ad}", c.birlikte, c.cumle()) for c in ciftler])
+            # Boş tablo açıklamasız kalmaz (M12b): neden boş olduğu yazılır.
+            _doldur(tablo, [(f"{c.a_ad} + {c.b_ad}", c.birlikte, c.cumle()) for c in ciftler]
+                    or [(f"En az {destek} sepette birlikte geçen çift yok.", "", "")])
 
     # ===================== 5. Ödemeler ===================================
     def _build_payments(self) -> QWidget:
@@ -654,8 +659,12 @@ class DashboardPage(Page):
         duzen.setContentsMargins(0, 8, 0, 0)
         self.coverage_label = make_label("", "cardTitle", wrap=True)
         duzen.addWidget(self.coverage_label)
-        self.profit_headline = make_label("", "cardValue", wrap=True)
+        # Başlık KISA ve büyüktür; açıklaması altında küçük yazıyla (M12b: tam
+        # cümle dev yazıyla üç satır tutuyordu).
+        self.profit_headline = make_label("", "profitHeadline", wrap=True)
         duzen.addWidget(self.profit_headline)
+        self.profit_note = make_label("", "cardHint", wrap=True)
+        duzen.addWidget(self.profit_note)
         self.tier_table = _tablo(["Maliyet bilgisi", "Ciro", "Ciro payı", "Maliyet",
                                   "Brüt kâr", "Satır"], "Maliyet bilgisi")
         duzen.addWidget(self.tier_table)
@@ -670,6 +679,7 @@ class DashboardPage(Page):
     def _fill_profit(self) -> None:
         kapsam = self.services.analytics.maliyet_kapsami(self._donem)
         toplam = kapsam.toplam_ciro
+        self.profit_note.setText("")
         if not toplam:
             self.coverage_label.setText("Bu dönemde satış yok.")
             self.profit_headline.setText("")
@@ -684,8 +694,9 @@ class DashboardPage(Page):
             else:
                 g = kapsam.guvenilir
                 self.profit_headline.setText(
-                    f"Kâr yalnızca kapsanan kısım için: {format_tl(g.kar)} "
-                    f"({format_tl(g.ciro)} ciro üzerinden). Tek bir toplam kâr rakamı "
+                    f"Kâr yalnızca kapsanan kısım için: {format_tl(g.kar)}")
+                self.profit_note.setText(
+                    f"{format_tl(g.ciro)} ciro üzerinden. Tek bir toplam kâr rakamı "
                     f"verilmez: güvenilir pay %{kar.BASLIK_ESIGI * 100:.0f}'in altında.")
         satirlar = []
         for ad, katman in kapsam.katmanlar():

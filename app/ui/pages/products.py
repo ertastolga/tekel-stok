@@ -46,6 +46,7 @@ from app.ui.pages.base import Page
 from app.ui.widgets.common import (
     Card,
     EmptyState,
+    FlowLayout,
     PageHeader,
     make_label,
     setup_table,
@@ -140,18 +141,23 @@ class ProductsPage(Page):
     # ===================== Kurulum =======================================
     def _build_filters(self) -> QWidget:
         kart = Card()
-        satir = QHBoxLayout()
-        satir.setSpacing(10)
+        # Akış: dar pencerede süzgeçler alt satıra iner, sayfa yatay taşmaz (M12b).
+        kap = QWidget()
+        satir = FlowLayout(kap, spacing=10)
 
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Ürün adı ya da barkod ara…")
         self.search_edit.setProperty("scannerExempt", True)
+        self.search_edit.setMinimumWidth(300)
         self.search_edit.textChanged.connect(self._on_filter_changed)
-        satir.addWidget(self.search_edit, 2)
+        satir.addWidget(self.search_edit)
 
         self.category_combo = QComboBox()
+        self.category_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.category_combo.setMinimumContentsLength(18)
         self.category_combo.currentIndexChanged.connect(self._on_filter_changed)
-        satir.addWidget(self.category_combo, 1)
+        satir.addWidget(self.category_combo)
 
         self.state_combo = QComboBox()
         self.state_combo.addItem("Tüm durumlar", None)
@@ -161,11 +167,11 @@ class ProductsPage(Page):
         ):
             self.state_combo.addItem(STOCK_STATE_LABELS[durum], int(durum))
         self.state_combo.currentIndexChanged.connect(self._on_filter_changed)
-        satir.addWidget(self.state_combo, 1)
+        satir.addWidget(self.state_combo)
 
         self.usage_combo = QComboBox()
         self.usage_combo.addItem("Kullanımdakiler", KULLANIMDAKILER)
-        self.usage_combo.addItem("Pasif ürünler", PASIFLER)
+        self.usage_combo.addItem("Kullanımdan kaldırılanlar", PASIFLER)
         self.usage_combo.addItem("Tümü", TUMU)
         self.usage_combo.currentIndexChanged.connect(self._on_filter_changed)
         satir.addWidget(self.usage_combo)
@@ -175,14 +181,15 @@ class ProductsPage(Page):
         self.incomplete_button.clicked.connect(self._on_filter_changed)
         satir.addWidget(self.incomplete_button)
 
-        kart.body.addLayout(satir)
+        kart.body.addWidget(kap)
         return kart
 
     def _build_bottom(self) -> QHBoxLayout:
+        # Solda sayfa bilgisi ve sayfalama; sağda eylemler (sağa yaslı akış:
+        # dar pencerede alt satıra iner, metinler kırpılmaz — M12b).
         alt = QHBoxLayout()
         self.count_label = make_label("", "cardHint")
         alt.addWidget(self.count_label)
-        alt.addStretch(1)
 
         self.prev_button = QPushButton("‹ Önceki")
         self.prev_button.clicked.connect(lambda: self._page(-1))
@@ -192,22 +199,28 @@ class ProductsPage(Page):
         self.next_button.clicked.connect(lambda: self._page(1))
         alt.addWidget(self.next_button)
 
+        eylemler = QWidget()
+        akis = FlowLayout(eylemler, spacing=8, sag=True)
+        alt.addWidget(eylemler, 1)
+
         self.move_button = QPushButton("Kategoriye Taşı")
         self.move_button.clicked.connect(self._move_selected)
-        alt.addWidget(self.move_button)
+        akis.addWidget(self.move_button)
 
-        self.clone_button = QPushButton("Benzer Üründen Oluştur")
+        self.clone_button = QPushButton("Benzerini Oluştur")
         self.clone_button.clicked.connect(self._clone_selected)
-        alt.addWidget(self.clone_button)
+        akis.addWidget(self.clone_button)
 
         self.edit_button = QPushButton("Düzenle")
         self.edit_button.setObjectName("primary")
         self.edit_button.clicked.connect(self._edit_selected)
-        alt.addWidget(self.edit_button)
+        akis.addWidget(self.edit_button)
 
-        self.deactivate_button = QPushButton("Pasife Al")
+        # Terim birliği (docs/TERMINOLOJI.md): "kullanımdan kaldır / yeniden
+        # kullanıma al" — kategoriler ve iletilerle aynı; "pasif" iç terimdir.
+        self.deactivate_button = QPushButton("Kullanımdan Kaldır")
         self.deactivate_button.clicked.connect(self._toggle_active)
-        alt.addWidget(self.deactivate_button)
+        akis.addWidget(self.deactivate_button)
         return alt
 
     # ===================== Veri ==========================================
@@ -321,7 +334,7 @@ class ProductsPage(Page):
         )
         if tek is not None:
             self.deactivate_button.setText(
-                "Yeniden Kullan" if not tek["is_active"] else "Pasife Al"
+                "Yeniden Kullanıma Al" if not tek["is_active"] else "Kullanımdan Kaldır"
             )
 
     def focus_search(self) -> None:

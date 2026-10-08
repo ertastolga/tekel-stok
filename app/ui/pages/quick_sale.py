@@ -52,7 +52,7 @@ log = logging.getLogger(__name__)
 
 #: Kasa sayfası dikey kenar boşluğu ve aralık (bütçe §5.2).
 KASA_DIKEY_KENAR = 10
-KASA_ARALIK = 10
+KASA_ARALIK = 8
 
 #: Sonuç şeridindeki en uzun iletiler (şerit yüksekliği bunlarla ölçülür).
 SERIT_ORNEKLERI = (
@@ -87,7 +87,7 @@ class QuickSalePage(KatmanSahibi, Page):
 
         self.toolbar = KasaToolbar()
         self.barcode = BarcodeInput("sale")
-        self.barcode.setPlaceholderText("BARKOD BEKLENİYOR — ürünü okutun, hemen satılır")
+        self.barcode.setPlaceholderText("Barkodu okutun — hemen satılır")
         self.barcode.submitted.connect(self._on_manual_entry)
         self.toolbar.add_field(self.barcode)
         self.search_button = self.toolbar.add_tool(
@@ -157,6 +157,8 @@ class QuickSalePage(KatmanSahibi, Page):
         kart.body.addWidget(make_label("Son Satışlar", "sectionTitle"))
         self.table = QTableWidget(0, 3)
         setup_table(self.table, ["Saat", "Ürün", "Tutar"])
+        # Ortadan kısaltma: uzun adda "+N kalem" eki görünür kalır (M12b).
+        self.table.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         stretch_column(self.table, "Ürün")
         self.table.setMinimumHeight(
             metrics.TABLE_ROW_HEIGHT * metrics.RECENT_MIN_ROWS + 40
@@ -221,13 +223,15 @@ class QuickSalePage(KatmanSahibi, Page):
             log.exception("Hızlı satış ekranı tazelenemedi")
 
     def _fill_recent(self) -> None:
-        satislar = self.services.sales.recent(limit=25)
+        satislar = self.services.sales.history(limit=25)
         self.table.setRowCount(len(satislar))
         for satir, satis in enumerate(satislar):
             saat = QTableWidgetItem(fmt_time(
                 __import__("datetime").datetime.fromtimestamp(satis["created_at_utc"])
             ))
-            ad = QTableWidgetItem(satis["ilk_urun"] or "-")
+            # Çok kalemli sepet tek ürün adıyla görünmesin (M12b, D-15 ile aynı).
+            ad = QTableWidgetItem((satis["ilk_urun"] or "-") + (
+                f"  +{satis['satir_sayisi'] - 1} kalem" if satis["satir_sayisi"] > 1 else ""))
             tutar = QTableWidgetItem(format_tl(satis["total_amount"]))
             tutar.setTextAlignment(
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter

@@ -25,10 +25,14 @@ from app.ui import metrics
 
 #: Araç çubuğunun en büyük yüksekliği.
 ARAC_CUBUGU_YUKSEKLIGI = 64
+#: Barkod alanının okunur kalacağı en az genişlik; altına inilecekse
+#: "katlanır" araçlar "⋯" menüsüne taşınır (M12b: 1000×600'de alan "Bar…"
+#: diye ezilmişti).
+BARKOD_ALANI_EN_AZ = 260
 
 #: En dar Kasa içerik genişliği: en küçük pencere − menü − sayfa kenar boşlukları.
 def en_dar_icerik_genisligi() -> int:
-    return metrics.MIN_WINDOW_WIDTH - metrics.NAV_WIDTH - 2 * metrics.PAGE_MARGIN_H
+    return metrics.MIN_WINDOW_WIDTH - metrics.nav_genisligi() - 2 * metrics.PAGE_MARGIN_H
 
 
 class KasaToolbar(QWidget):
@@ -42,11 +46,15 @@ class KasaToolbar(QWidget):
         self._duzen.setContentsMargins(0, 0, 0, 0)
         self._duzen.setSpacing(8)
         self.tools: list[QPushButton] = []
+        #: Dar pencerede menüye taşınan araçlar: (düğme, menü eylemi).
+        self._katlanirlar: list[tuple[QPushButton, QAction]] = []
+        self._alan: QWidget | None = None
 
         self.more_menu = QMenu(self)
         self.more_menu.setObjectName("kasaMenu")
         self.more_button = QPushButton("⋯")
-        self.more_button.setObjectName("kasaTool")
+        # Kendi biçemi: aynı 56 px hedef, okunur büyüklükte simge (M12b).
+        self.more_button.setObjectName("kasaMore")
         self.more_button.setToolTip("Diğer işlemler")
         self.more_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.more_button.setFixedWidth(metrics.TOUCH_TARGET_MIN)
@@ -60,8 +68,12 @@ class KasaToolbar(QWidget):
         # Araç çubuğu yüksekliğini doldurur: içerik hiçbir ölçekte kırpılmaz.
         widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._duzen.addWidget(widget, 1)
+        self._alan = widget
 
-    def add_tool(self, text: str, slot, tooltip: str = "") -> QPushButton:
+    def add_tool(self, text: str, slot, tooltip: str = "",
+                 collapsible: bool = False) -> QPushButton:
+        """``collapsible``: yer kalmazsa düğme gizlenir, eylemi "⋯" menüsünde
+        görünür (metin değişmez; kısayolu ve menü yolu aynı kalır)."""
         dugme = QPushButton(text)
         dugme.setObjectName("kasaTool")
         dugme.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -70,12 +82,41 @@ class KasaToolbar(QWidget):
         dugme.clicked.connect(slot)
         self._duzen.addWidget(dugme)
         self.tools.append(dugme)
+        if collapsible:
+            eylem = QAction(text, self)
+            eylem.triggered.connect(slot)
+            eylem.setVisible(False)
+            self._katlanirlar.append((dugme, eylem))
         return dugme
+
+    def collapsed(self) -> bool:
+        """Katlanır araçlar şu an menüde mi?"""
+        return any(not d.isVisibleTo(self) for d, _e in self._katlanirlar)
+
+    def _katla(self, genislik: int) -> None:
+        if not self._katlanirlar:
+            return
+        aralik = self._duzen.spacing()
+        gereken = BARKOD_ALANI_EN_AZ
+        for dugme in self.tools:
+            gereken += dugme.sizeHint().width() + aralik
+        if self.more_button.parent() is self and self.more_button.isVisibleTo(self):
+            gereken += self.more_button.sizeHint().width() + aralik
+        katli = genislik < gereken
+        for dugme, eylem in self._katlanirlar:
+            dugme.setVisible(not katli)
+            eylem.setVisible(katli)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._katla(event.size().width())
 
     def finish(self, with_menu: bool = True) -> None:
         """Araçlar eklendikten sonra "⋯" en sağa konur (menüsüz sayfada yok)."""
         if with_menu:
             self._duzen.addWidget(self.more_button)
+            for _dugme, eylem in self._katlanirlar:
+                self.more_menu.addAction(eylem)
         else:
             self.more_button.setParent(self)
             self.more_button.setVisible(False)

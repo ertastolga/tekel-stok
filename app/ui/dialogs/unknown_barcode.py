@@ -217,6 +217,9 @@ class UnknownBarcodeDialog(TouchDialog):
     def _build_intro(self) -> QWidget:
         sahne = QWidget()
         duzen = QVBoxLayout(sahne)
+        # Seçenekler dikeyde ortalanır: pencere en büyük sahneye göre
+        # boyutlandığı için üstte sıkışık, altta boş duruyordu (M12b).
+        duzen.addStretch(1)
         self.owner = self.services.barcodes.inactive_owner(self.barcode)
         self.reactivate_button = TouchKey("", width=520)
         self.reactivate_button.setObjectName("primary")

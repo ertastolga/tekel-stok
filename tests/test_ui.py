@@ -29,10 +29,20 @@ from ui_support import *  # noqa: E402,F401,F403
 
 # ===================== Açılış ============================================
 def test_tum_sayfalar_acilir(window, qapp):
+    from PySide6.QtWidgets import QScrollArea
+
     for anahtar in list(window.pages):
         window.go_to(anahtar)
         qapp.processEvents()
-        assert window.stack.currentWidget() is window.pages[anahtar]
+        sayfa = window.pages[anahtar]
+        mevcut = window.stack.currentWidget()
+        assert window.current_page() is sayfa
+        # M12b: Kasa dışı sayfalar kaydırma kabındadır (sığmayınca üst üste
+        # binmez); Kasa sayfaları ASLA kaydırılmaz (dikey bütçe korunur).
+        if getattr(sayfa, "kasa_sayfasi", False):
+            assert mevcut is sayfa, anahtar
+        else:
+            assert isinstance(mevcut, QScrollArea) and mevcut.widget() is sayfa, anahtar
 
 
 def test_sales_first_sepetli_satisa_acilir(window):

@@ -21,6 +21,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QPushButton  # noqa: E402
 
+from app import config  # noqa: E402
 from app.core.models import OperatingMode  # noqa: E402
 from app.core.money import nakit_hizli_tutarlar  # noqa: E402
 from app.scanner.scan_event import ScanEvent  # noqa: E402
@@ -163,8 +164,12 @@ def test_panel_sigar_ve_dokunma_boyutunda(kasa, qapp, services, bira, acik):
 
 
 def test_sales_first_yeni_musteri_ipucunu_gizler(window, services):
-    assert "Yeni Müşteri" not in window.nav_footer.text()
+    # M12b: kısayol özeti menü altındaki ipucundadır (altı satırlık metin
+    # menüyü itiyordu); kural aynı: SALES_FIRST'te "Yeni Müşteri" yok.
+    assert "Yeni Müşteri" not in window.nav_footer.toolTip()
+    assert "F1 Hızlı Satış" in window.nav_footer.toolTip()
     assert "Yeni Müşteri" in shortcuts.footer_hint(sales_first=False)
     services.settings.set("operating_mode", OperatingMode.INVENTORY_TRACKED)
     window.apply_settings()
-    assert "F4 Yeni Müşteri" in window.nav_footer.text()
+    assert "F4 Yeni Müşteri" in window.nav_footer.toolTip()
+    assert window.nav_footer.text() == f"Sürüm {config.APP_VERSION}", "menü altı tek satır"

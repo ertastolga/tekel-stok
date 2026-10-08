@@ -71,6 +71,9 @@ class SuppliersPage(Page):
         duzen.addWidget(self.empty, 1)
 
         duzen.addWidget(make_label("Bu Tedarikçiden Gelen Ürünler", "sectionTitle"))
+        # Boş tablo açıklamasız kalmaz (M12b).
+        self.product_hint = make_label("", "cardHint", wrap=True)
+        duzen.addWidget(self.product_hint)
         self.product_table = QTableWidget(0, 4)
         setup_table(
             self.product_table, ["Ürün", "Stok", "Son Alış Fiyatı", "Son Alış Tarihi"]
@@ -114,8 +117,13 @@ class SuppliersPage(Page):
         index = self.table.currentRow()
         if index < 0 or index >= len(getattr(self, "_suppliers", [])):
             self.product_table.setRowCount(0)
+            self.product_hint.setText(
+                "Ürünlerini görmek için yukarıdan bir tedarikçi seçin."
+                if getattr(self, "_suppliers", []) else "")
             return
         urunler = self.services.suppliers.products(self._suppliers[index]["id"])
+        self.product_hint.setText(
+            "" if urunler else "Bu tedarikçiden henüz mal kabul yapılmamış.")
         self.product_table.setRowCount(len(urunler))
         for satir, urun in enumerate(urunler):
             hucreler = (

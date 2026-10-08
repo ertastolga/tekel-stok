@@ -278,7 +278,8 @@ def test_pasif_urun_bulunur_ve_geri_alinir(urunler, services, bira, onay):
     urunler.usage_combo.setCurrentIndex(urunler.usage_combo.findData(urunler_sayfasi.PASIFLER))
     assert [u["id"] for u in urunler._current] == [bira], "V1.1: pasifler bulunamıyordu"
     urunler.table.selectRow(0)
-    assert urunler.deactivate_button.text() == "Yeniden Kullan"
+    # M12b terim birliği: "Yeniden Kullan" → "Yeniden Kullanıma Al" (aynı sınama).
+    assert urunler.deactivate_button.text() == "Yeniden Kullanıma Al"
     urunler._toggle_active()
     assert services.products.get(bira)["is_active"] == 1
     assert services.barcodes.resolve(BIRA_BARKOD).product_id == bira, "barkod geri açıldı"

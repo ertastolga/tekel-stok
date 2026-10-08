@@ -48,7 +48,9 @@ from app.ui.pages.base import Page
 from app.ui.widgets.common import (
     Card,
     EmptyState,
+    FlowLayout,
     PageHeader,
+    labeled,
     make_label,
     setup_table,
     stretch_column,
@@ -97,7 +99,7 @@ class HistoryPage(Page):
         duzen = QVBoxLayout(sayfa)
         duzen.setContentsMargins(12, 12, 12, 12)
         duzen.setSpacing(10)
-        duzen.addLayout(self._build_sales_filters())
+        duzen.addWidget(self._build_sales_filters())
 
         # Sol: liste (boşsa açıklama), sağ: seçili satışın ayrıntısı.
         self.sales_table = QTableWidget(0, 7)
@@ -116,7 +118,7 @@ class HistoryPage(Page):
         bolucu.setChildrenCollapsible(False)
         bolucu.addWidget(self.sales_stack)
         bolucu.addWidget(self._build_sale_detail())
-        bolucu.setStretchFactor(0, 3)
+        bolucu.setStretchFactor(0, 5)
         bolucu.setStretchFactor(1, 2)
         duzen.addWidget(bolucu, 1)
 
@@ -140,17 +142,17 @@ class HistoryPage(Page):
         duzen.addLayout(alt)
         return sayfa
 
-    def _build_sales_filters(self) -> QHBoxLayout:
-        satir = QHBoxLayout()
-        satir.setSpacing(8)
+    def _build_sales_filters(self) -> QWidget:
+        # Akış: dar pencerede süzgeçler alt satıra iner (M12b).
+        kap = QWidget()
+        satir = FlowLayout(kap, spacing=12)
 
         def secim(etiket: str, secenekler: list[tuple[str, object]]) -> QComboBox:
             kutu = QComboBox()
             for ad, deger in secenekler:
                 kutu.addItem(ad, deger)
             kutu.currentIndexChanged.connect(lambda _i: self._suzgec_degisti())
-            satir.addWidget(make_label(etiket, "cardHint"))
-            satir.addWidget(kutu)
+            satir.addWidget(labeled(etiket, kutu))
             return kutu
 
         self.period_combo = secim("Dönem", [
@@ -166,7 +168,6 @@ class HistoryPage(Page):
             kutu.setVisible(False)
             kutu.dateChanged.connect(lambda _d: self._suzgec_degisti())
             satir.addWidget(kutu)
-        satir.addSpacing(8)
         self.mode_combo = secim("Kip", [
             ("Tümü", None), (KIP_ADLARI[SaleMode.CART], SaleMode.CART),
             (KIP_ADLARI[SaleMode.QUICK], SaleMode.QUICK)])
@@ -176,12 +177,11 @@ class HistoryPage(Page):
             (_odeme_adi(None), ODEME_KAYITSIZ)])
         self.status_combo = secim("Durum", [
             ("Tümü", None), ("Tamamlanan", DURUM_TAMAM), ("Geri alınan", DURUM_GERI_ALINDI)])
-        satir.addStretch(1)
-        return satir
+        return kap
 
     def _build_sale_detail(self) -> QWidget:
         kart = Card()
-        kart.setMinimumWidth(280)
+        kart.setMinimumWidth(260)
         kart.body.addWidget(make_label("Satış ayrıntısı", "cardTitle"))
         self.detail_stack = QStackedWidget()
         self.detail_empty = EmptyState(

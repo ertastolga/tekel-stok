@@ -55,6 +55,10 @@ class ThemeTokens:
     nav_active: str
     nav_group: str
     nav_hover: str
+    #: Menüde başlık ve seçili/üzerine gelinen öğe yazısı (iki temada da açık).
+    nav_strong: str
+    #: Seçili menü öğesinin zemini (nav_strong ile ≥ 4,5:1 kontrast).
+    nav_selected: str
     danger: str
     danger_light: str
     danger_border: str
@@ -107,6 +111,8 @@ LIGHT = ThemeTokens(
     nav_active="#2E90FA",
     nav_group="#8A99AB",
     nav_hover="rgba(255,255,255,0.08)",
+    nav_strong="#FFFFFF",
+    nav_selected="#1F6FC5",
     danger="#C62B2B",
     danger_light="#FBE7E7",
     danger_border="#A32222",
@@ -161,6 +167,8 @@ DARK = ThemeTokens(
     nav_active="#3A8CD6",
     nav_group="#8A99AB",
     nav_hover="rgba(255,255,255,0.08)",
+    nav_strong="#FFFFFF",
+    nav_selected="#24507A",
     danger="#EB5F57",
     danger_light="#3D1B1B",
     danger_border="#F07A73",
@@ -364,8 +372,9 @@ QDialog, QMessageBox {{ background: {t.bg}; }}
 
 /* ---- Sol menü ---- */
 #navRail {{ background: {t.nav_bg}; }}
+#navContent {{ background: {t.nav_bg}; }}
 #navTitle {{
-    color: {t.on_accent}; font-size: {m.FONT_SECTION_PT}pt; font-weight: 600;
+    color: {t.nav_strong}; font-size: {m.FONT_SECTION_PT}pt; font-weight: 600;
     padding: 16px 14px 2px 14px;
 }}
 #navSubtitle {{ color: {t.nav_group}; padding: 0 14px 12px 14px; }}
@@ -378,15 +387,20 @@ QPushButton#navGroupHeader {{
     text-align: left; font-size: {m.FONT_SMALL_PT}pt; font-weight: 600;
     padding: 12px 14px 4px 14px; min-height: 28px;
 }}
-QPushButton#navGroupHeader:hover {{ color: {t.on_accent}; }}
+QPushButton#navGroupHeader:hover {{ color: {t.nav_strong}; }}
 #navButton {{
     background: transparent; color: {t.nav_text}; border: none;
     text-align: left; padding: 11px 14px; border-radius: 6px;
     margin: 1px 8px;
 }}
-#navButton:hover {{ background: {t.nav_hover}; color: {t.on_accent}; }}
-#navButton:checked {{ background: {t.nav_active}; color: {t.on_accent}; font-weight: 600; }}
+#navButton:hover {{ background: {t.nav_hover}; color: {t.nav_strong}; }}
+/* Seçili sayfa AÇIKÇA vurgulanır (M12b: zemin, içerik gerecinin kapsamsız stil
+   sayfasınca eziliyordu; koyu temada yazı zeminle aynı renkteydi). */
+#navButton:checked {{ background: {t.nav_selected}; color: {t.nav_strong}; font-weight: 600; }}
 #navFooter {{ color: {t.nav_group}; font-size: {m.FONT_SMALL_PT}pt; padding: 10px 14px; }}
+/* Menü kaydırma çubuğu koyu zeminde göze batmaz (M12b). */
+#navRail QScrollBar:vertical {{ background: transparent; width: 8px; }}
+#navRail QScrollBar::handle:vertical {{ background: {t.nav_hover}; border-radius: 4px; }}
 
 /* ---- Sayfa ---- */
 #contentArea {{ background: {t.bg}; }}
@@ -416,6 +430,14 @@ QPushButton#actionCardPrimary {{
     background: {t.primary_light}; border-color: {t.primary};
 }}
 QPushButton#actionCardPrimary:hover {{ background: {t.primary_light_hover}; }}
+/* Yazı boyutları ADLA verilir: "*" kuralı koddaki setFont'u ezer (M12b). */
+#actionTitle {{ font-size: {m.FONT_ACTION_TITLE_PT}pt; font-weight: 700; }}
+#actionHint {{ font-size: {m.FONT_ACTION_HINT_PT}pt; color: {t.text_muted}; }}
+#priceCheckName {{ font-size: {m.FONT_PAGE_TITLE_PT}pt; font-weight: 600; }}
+#priceCheckPrice {{ font-size: {m.FONT_PRICE_CHECK_PT}pt; font-weight: 700; color: {t.text}; }}
+#packQuestion {{ font-size: {m.FONT_SECTION_PT}pt; font-weight: 700; }}
+#kpiValue {{ font-size: {m.FONT_CARD_VALUE_PT}pt; font-weight: 700; }}
+#profitHeadline {{ font-size: {m.FONT_PAGE_TITLE_PT}pt; font-weight: 600; }}
 
 /* ---- Düğmeler ---- */
 QPushButton {{
@@ -551,18 +573,28 @@ QPushButton#kasaTool {{
     min-height: {m.TOUCH_TARGET_MIN - 20}px; padding: 9px 14px; font-weight: 600;
     border-radius: 10px;
 }}
+QPushButton#kasaMore {{
+    min-height: {m.TOUCH_TARGET_MIN - 20}px; padding: 9px 6px; border-radius: 10px;
+    font-size: {m.FONT_CART_QTY_PT}pt; font-weight: 700;
+}}
 QMenu#kasaMenu {{ background: {t.surface}; border: 1px solid {t.border}; }}
 QMenu#kasaMenu::item {{ padding: 16px 28px; font-size: {m.FONT_SECTION_PT}pt; }}
 QMenu#kasaMenu::item:selected {{ background: {t.cart_light}; color: {t.text}; }}
 QMenu#kasaMenu::item:disabled {{ color: {t.disabled_fg}; }}
 
 /* ---- Ayarlar bölüm düğmeleri ---- */
+/* 56 px dokunma hedefi; liste sığmazsa kendi içinde kaydırılır (M12b). */
 QPushButton#sectionNav {{
     text-align: left; padding: 8px 14px; font-weight: 600;
-    min-height: {m.TOUCH_TARGET_MIN - 18}px;
+    min-height: {m.SECTION_NAV_HEIGHT - 18}px;
 }}
 QPushButton#sectionNav:checked {{
     background: {t.cart_light}; border: 2px solid {t.cart}; color: {t.text};
+}}
+/* Seçmeli düğme dizisi (Analiz dönemleri vb.): seçili olan AÇIKÇA görünür. */
+QPushButton#segment {{ padding: 8px 14px; }}
+QPushButton#segment:checked {{
+    background: {t.cart}; color: {t.on_accent}; border-color: {t.cart_dark}; font-weight: 600;
 }}
 
 /* ---- Dokunmatik giriş takımı ---- */
@@ -576,6 +608,14 @@ QPushButton#touchKey {{
     min-height: {m.TOUCH_TARGET_MIN - 4}px;
 }}
 QPushButton#searchResult {{ text-align: left; padding: 9px 14px; }}
+#searchName {{ font-size: {m.FONT_CART_PRICE_PT}pt; }}
+#searchPrice {{ font-size: {m.FONT_CART_NAME_PT}pt; font-weight: 700; }}
+/* Dokunmatik pencerelerde birincil düğme de dokunma yazı boyutundadır
+   (M12b: "Onayla" komşusu "Vazgeç"ten küçük görünüyordu). */
+QPushButton#primary[dokunma="evet"] {{
+    font-size: {m.FONT_SECTION_PT}pt; font-weight: 600; border-radius: 10px;
+}}
+QPushButton[tutarDugmesi="evet"] {{ font-size: {m.FONT_PAYMENT_PT}pt; font-weight: 700; }}
 QPushButton#touchKey:hover   {{ background: {t.step_hover}; border-color: {t.nav_active}; }}
 QPushButton#touchKey:pressed {{ background: {t.step_pressed}; }}
 QPushButton#touchKey:checked {{
@@ -586,9 +626,12 @@ QPushButton#touchKey:checked {{
     font-size: {m.FONT_BARCODE_PT}pt; font-weight: 600; padding: 6px 12px;
 }}
 #touchDisplay[bos="evet"] {{ color: {t.text_muted}; font-weight: 400; }}
+#touchDisplay[buyuk="evet"] {{ font-size: {m.FONT_TOUCH_QTY_PT}pt; font-weight: 700; }}
 
 /* ---- Diğer ---- */
 QScrollArea {{ border: none; background: transparent; }}
+/* Sayfa kabı: içerik pencereye sığmazsa üst üste binmez, kaydırılır (M12b). */
+QScrollArea#pageScroll, QScrollArea#pageScroll > QWidget > QWidget {{ background: {t.bg}; }}
 QStatusBar {{ background: {t.surface}; border-top: 1px solid {t.border}; }}
 QStatusBar::item {{ border: none; }}
 QToolTip {{
@@ -602,7 +645,21 @@ QGroupBox::title {{
     subcontrol-origin: margin; left: 12px; padding: 0 6px;
     color: {t.text_muted}; font-weight: 600;
 }}
-QCheckBox::indicator, QRadioButton::indicator {{ width: 22px; height: 22px; }}
+/* Gösterge TAM çizilir: yalnızca boyut verilince yerleşik kutu kayboluyor,
+   işaretsiz onay kutusu hiç görünmüyordu (M12b ekran incelemesi). */
+QCheckBox::indicator, QRadioButton::indicator {{
+    width: 20px; height: 20px; border: 2px solid {t.text_muted};
+    border-radius: 5px; background: {t.surface};
+}}
+QRadioButton::indicator {{ border-radius: 12px; }}
+QCheckBox::indicator:hover, QRadioButton::indicator:hover {{ border-color: {t.nav_active}; }}
+QCheckBox::indicator:checked, QRadioButton::indicator:checked {{
+    background: {t.primary}; border-color: {t.primary_dark};
+}}
+QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {{
+    background: {t.disabled_bg}; border-color: {t.disabled_border};
+}}
+QCheckBox {{ spacing: 10px; }}
 QScrollBar:vertical {{ background: transparent; width: 12px; margin: 0; }}
 QScrollBar::handle:vertical {{ background: {t.border}; border-radius: 6px; min-height: 30px; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}

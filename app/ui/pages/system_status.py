@@ -65,12 +65,15 @@ class SystemStatusPage(Page):
         self.table = QTableWidget(0, 3)
         setup_table(self.table, ["Öğe", "Değer", "Durum"])
         stretch_column(self.table, "Değer")
-        duzen.addWidget(self.table, 2)
+        # Durum tablosu sayfanın ASIL içeriğidir: kalan alanın hepsini alır
+        # (M12b: uyarı kutusu yüzünden 1,5 satıra sıkışıyordu).
+        self.table.setMinimumHeight(240)
+        duzen.addWidget(self.table, 1)
 
         kart = Card()
         kart.body.addWidget(make_label("Uyarılar", "cardTitle"))
         self.advisory_list = QListWidget()
-        self.advisory_list.setMaximumHeight(120)
+        self.advisory_list.setMaximumHeight(96)
         kart.body.addWidget(self.advisory_list)
         satir = QHBoxLayout()
         self.deep_button = QPushButton("Tam denetim yap")
@@ -94,7 +97,7 @@ class SystemStatusPage(Page):
             "Destek paketi; sistem bilgisi, ayarlar (PIN hariç), kayıt dosyaları ve "
             "sınama raporunu tek ZIP dosyasında toplar. Kişisel klasör yolları gizlenir. "
             "Veritabanı varsayılan olarak EKLENMEZ.", "cardHint", wrap=True))
-        duzen.addWidget(kart, 1)
+        duzen.addWidget(kart)
         self.root.addWidget(govde, 1)
 
     def on_activated(self) -> None:

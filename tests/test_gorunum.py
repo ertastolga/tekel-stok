@@ -79,6 +79,18 @@ def test_eski_surum_veritabani_varsayilan(v1_1_kopya):
 
 
 # ===================== Koyu tema ===========================================
+@pytest.mark.parametrize("ad", ["LIGHT", "DARK"])
+def test_menu_basligi_ve_secili_oge_okunur(ad):
+    """M12b: koyu temada menü başlığı ve seçili öğe yazısı zeminle aynı renkteydi
+    (görünmüyordu); seçili öğenin zemini de hiç çizilmiyordu."""
+    t = getattr(theme, ad)
+    assert kontrast(t.nav_strong, t.nav_bg) >= 7, "başlık"
+    assert kontrast(t.nav_strong, t.nav_selected) >= 4.5, "seçili öğe"
+    assert kontrast(t.nav_selected, t.nav_bg) >= 1.5, "seçili zemin menüden ayrışır"
+    sayfa = theme.build_stylesheet(t)
+    assert f"#navButton:checked {{ background: {t.nav_selected}; color: {t.nav_strong};" in sayfa
+
+
 def test_koyu_tema_kontrasti():
     t = theme.DARK
     assert kontrast(t.text, t.bg) >= 7 and kontrast(t.text, t.surface) >= 7

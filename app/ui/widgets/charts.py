@@ -35,7 +35,7 @@ class SimpleBarChart(QWidget):
         self._accent = theme.PRIMARY
         self._bicim = TL
         self._caption = ""
-        self._empty_text = "Bu dönemde satış yok"
+        self._empty_text = "Henüz veri yok"
         self.setMinimumHeight(140)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
@@ -73,8 +73,9 @@ class SimpleBarChart(QWidget):
         en_buyuk = max(degerler, default=0)
         if not self._data or en_buyuk <= 0:
             boyaci.setPen(QColor(theme.TEXT_MUTED))
-            boyaci.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter,
-                            self._empty_text if self._data else "Henüz veri yok")
+            # Sayfanın verdiği açıklama DAİMA gösterilir (ör. "Eğilimi görmek
+            # için bir ürün seçin"); önceden veri boşken yok sayılıyordu (M12b).
+            boyaci.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._empty_text)
             boyaci.end()
             return
 

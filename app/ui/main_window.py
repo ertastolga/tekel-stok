@@ -23,6 +23,7 @@ from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -105,6 +106,8 @@ class MainWindow(QMainWindow):
         self.restarting = False
         self._status_timer = None
         self._status_message = ""
+        #: Kasa dışı sayfaların kaydırma kapları (nav_key → QScrollArea).
+        self._sayfa_kaplari: dict[str, QScrollArea] = {}
 
         self._update_title()
         self.setMinimumSize(metrics.MIN_WINDOW_WIDTH, metrics.MIN_WINDOW_HEIGHT)
@@ -175,31 +178,36 @@ class MainWindow(QMainWindow):
         rail = QWidget()
         rail.setObjectName("navRail")
         rail.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        rail.setFixedWidth(metrics.NAV_WIDTH)
+        rail.setFixedWidth(metrics.nav_genisligi())
 
         duzen = QVBoxLayout(rail)
         duzen.setContentsMargins(0, 0, 0, 0)
         duzen.setSpacing(0)
 
         duzen.addWidget(make_label(config.APP_NAME, "navTitle"))
-        duzen.addWidget(make_label("Barkodlu stok ve satış", "navSubtitle", wrap=True))
+        # Alt başlık dükkânın adıdır (girildiyse); yoksa kısa tanım (M12b).
+        self.nav_subtitle = make_label("", "navSubtitle", wrap=True)
+        duzen.addWidget(self.nav_subtitle)
 
         kaydirma = QScrollArea()
         kaydirma.setWidgetResizable(True)
         kaydirma.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         icerik = QWidget()
         icerik.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        icerik.setStyleSheet(f"background: {theme.NAV_BG};")
+        # Zemin stil sayfasında ADLA verilir (#navContent): kapsamsız bir gereç
+        # stil sayfası menü düğmelerinin seçili zeminini eziyordu (M12b).
+        icerik.setObjectName("navContent")
         self.nav_layout = QVBoxLayout(icerik)
         self.nav_layout.setContentsMargins(0, 0, 0, 8)
         self.nav_layout.setSpacing(0)
         kaydirma.setWidget(icerik)
         duzen.addWidget(kaydirma, 1)
 
-        self.nav_footer = make_label(
-            f"Sürüm {config.APP_VERSION}\n{shortcuts.FOOTER_HINT}",
-            "navFooter", wrap=True,
-        )
+        # Alt bilgi TEK satırdır; kısayol özeti ipucundadır. Altı satırlık
+        # kısayol listesi menüyü itip YÖNETİM sayfalarını kaydırma gerektiren
+        # alana düşürüyordu (M12b ekran incelemesi).
+        self.nav_footer = make_label(f"Sürüm {config.APP_VERSION}", "navFooter")
+        self.nav_footer.setToolTip(shortcuts.FOOTER_HINT)
         duzen.addWidget(self.nav_footer)
 
         self.nav_buttons: dict[str, QPushButton] = {}
@@ -214,9 +222,14 @@ class MainWindow(QMainWindow):
             satis_once = self.services.settings.is_sales_first()
         except Exception:
             satis_once = False
-        self.nav_footer.setText(
-            f"Sürüm {config.APP_VERSION}\n{shortcuts.footer_hint(satis_once)}"
-        )
+        self.nav_footer.setText(f"Sürüm {config.APP_VERSION}")
+        self.nav_footer.setToolTip(
+            "Klavye kısayolları: " + shortcuts.footer_hint(satis_once))
+        try:
+            dukkan = self.services.settings.shop_name()
+        except Exception:
+            dukkan = ""
+        self.nav_subtitle.setText(dukkan or "Stok ve satış")
 
     def _build_pages(self) -> None:
         from app.ui.pages.barcode_test import BarcodeTestPage
@@ -283,9 +296,24 @@ class MainWindow(QMainWindow):
         self._update_footer()
 
     def _build_page(self, sinif):
-        """Sayfayı ilk istendiğinde kurar, yığına ve yönlendiriciye ekler."""
+        """Sayfayı ilk istendiğinde kurar, yığına ve yönlendiriciye ekler.
+
+        Kasa dışındaki sayfalar bir kaydırma kabına konur: içerik pencereye
+        sığmazsa (1000×600, %130 yazı) gereçler üst üste binmez, sayfa
+        kaydırılır (M12b ekran incelemesi: Mal Kabul, Fiyat Yönetimi). Kasa
+        sayfaları kaydırılmaz; onların dikey bütçesi testlerle korunur.
+        """
         sayfa = sinif(self.services, self)
-        self.stack.addWidget(sayfa)
+        if getattr(sayfa, "kasa_sayfasi", False):
+            self.stack.addWidget(sayfa)
+        else:
+            kap = QScrollArea()
+            kap.setObjectName("pageScroll")
+            kap.setWidgetResizable(True)
+            kap.setFrameShape(QFrame.Shape.NoFrame)
+            kap.setWidget(sayfa)
+            self._sayfa_kaplari[sinif.nav_key] = kap
+            self.stack.addWidget(kap)
         if sayfa.accepts_scans:
             self.router.register(sayfa.nav_key, sayfa.handle_scan)
         return sayfa
@@ -426,7 +454,7 @@ class MainWindow(QMainWindow):
             except Exception:
                 log.exception("Sayfa kapatılırken hata: %s", self._current_key)
 
-        self.stack.setCurrentWidget(sayfa)
+        self.stack.setCurrentWidget(self._sayfa_kaplari.get(key, sayfa))
         self.previous_key = self._current_key
         self._current_key = key
         self._check_nav(key)

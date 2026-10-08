@@ -38,8 +38,10 @@ from app.ui.widgets.barcode_input import BarcodeInput, FocusKeeper
 from app.ui.widgets.common import (
     Card,
     EmptyState,
+    FlowLayout,
     PageHeader,
     ResultBanner,
+    labeled,
     make_label,
     setup_table,
     stretch_column,
@@ -76,6 +78,9 @@ class StockCountPage(Page):
         duzen.addWidget(self._build_scan())
 
         self.banner = ResultBanner()
+        # İlk iletiye dek gizli: boş beyaz kutu anlamsızdı (M12b).
+        self.banner.setVisible(False)
+        self.banner.shown.connect(lambda _tur: self.banner.setVisible(True))
         duzen.addWidget(self.banner)
 
         self.table = QTableWidget(0, 5)
@@ -99,13 +104,13 @@ class StockCountPage(Page):
     # ===================== Kurulum =======================================
     def _build_setup(self) -> QWidget:
         kart = Card()
-        satir = QHBoxLayout()
-        satir.setSpacing(10)
+        # Akış: dar pencerede alt satıra iner (M12b: tek satır 1097 px istiyordu).
+        kap = QWidget()
+        satir = FlowLayout(kap, spacing=10)
 
-        satir.addWidget(make_label("Bölüm"))
         self.location_combo = QComboBox()
         self.location_combo.setMinimumWidth(220)
-        satir.addWidget(self.location_combo)
+        satir.addWidget(labeled("Bölüm", self.location_combo, ""))
 
         self.blind_check = QCheckBox("Kör sayım (sistem adedini gösterme)")
         satir.addWidget(self.blind_check)
@@ -118,9 +123,7 @@ class StockCountPage(Page):
         self.add_location_button = QPushButton("Bu Bölümü de Say")
         self.add_location_button.clicked.connect(self._add_location)
         satir.addWidget(self.add_location_button)
-
-        satir.addStretch(1)
-        kart.body.addLayout(satir)
+        kart.body.addWidget(kap)
 
         self.scope_label = make_label("", "cardHint", wrap=True)
         kart.body.addWidget(self.scope_label)

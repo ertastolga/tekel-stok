@@ -57,7 +57,6 @@ EN_COK_ADET = 9999
 ADET = "ADET"
 MALIYET = "MALIYET"
 #: Adet gösteriminin yazı boyutu (pt): karşıdan okunur.
-ADET_PT = 26.0
 
 
 class DokunmaGosterimi(TouchDisplay):
@@ -142,7 +141,7 @@ class QuickStockPage(Page):
         adet_satiri.addWidget(self.minus_button)
         self.qty_display = DokunmaGosterimi("0", max_length=4)
         self.qty_display.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.qty_display.setFont(theme.base_font(ADET_PT, bold=True))
+        self.qty_display.setProperty("buyuk", "evet")    # #touchDisplay[buyuk] (M12b)
         self.qty_display.clicked.connect(lambda: self._hedefle(ADET))
         self.qty_display.changed.connect(lambda _m: self._ozet())
         adet_satiri.addWidget(self.qty_display, 1)

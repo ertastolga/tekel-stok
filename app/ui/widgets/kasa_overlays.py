@@ -295,7 +295,7 @@ class UrunAraPanel(KasaOverlay):
         if touch_keyboard:
             self.keyboard = TouchKeyboard()
             self.keyboard.bind(self.display)
-            self.body.addWidget(self.keyboard)
+            self.body.addWidget(self.keyboard, 0, Qt.AlignmentFlag.AlignHCenter)
 
         self._zamanlayici = QTimer(self)
         self._zamanlayici.setSingleShot(True)
@@ -324,7 +324,17 @@ class UrunAraPanel(KasaOverlay):
         self.result_buttons = []
         for sira, satir in enumerate(sonuclar):
             ad = satir["name"] + (f"  ·  {satir['marka']}" if satir["marka"] else "")
-            dugme = QPushButton(f"{ad}    {format_tl(satir['sale_price'])}")
+            fiyat = format_tl(satir["sale_price"])
+            # Ad solda, fiyat SAĞDA ve kalın: kasiyer fiyatı tek bakışta görür
+            # (M12b ekran incelemesi). Etiketler tıklamayı düğmeye bırakır.
+            dugme = QPushButton()
+            dugme.setAccessibleName(f"{ad} {fiyat}")
+            ic = QHBoxLayout(dugme)
+            ic.setContentsMargins(14, 0, 14, 0)
+            for metin, ad_nesne, esnek in ((ad, "searchName", 1), (fiyat, "searchPrice", 0)):
+                etiket = make_label(metin, ad_nesne)
+                etiket.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+                ic.addWidget(etiket, esnek)
             dugme.setObjectName("searchResult")
             dugme.setProperty("dokunma", "evet")
             dugme.setMinimumHeight(metrics.TOUCH_TARGET_MIN)
@@ -429,6 +439,11 @@ class TenderPanel(KasaOverlay):
 
         self.total_label = make_label("", "cartGrandTotal")
         self.body.addWidget(self.total_label)
+        # Ne yapılacağı yazılır (M12b: panel boş görünüyordu).
+        self.instruction_label = make_label(
+            "Müşteriden alınan tutara dokunun: satış tamamlanır, para üstü gösterilir. "
+            "Başka bir tutar için \"Özel tutar\".", "cardHint", wrap=True)
+        self.body.addWidget(self.instruction_label)
 
         self.quick_row = QHBoxLayout()
         self.quick_row.setSpacing(8)
@@ -474,6 +489,7 @@ class TenderPanel(KasaOverlay):
             metin = f"Tam {format_tl(tutar)}" if tam else format_tl(tutar)
             dugme = _dokunma_dugmesi(metin, "primary" if tam else "kasaTool")
             dugme.setProperty("tutar", tutar)
+            dugme.setProperty("tutarDugmesi", "evet")      # büyük yazı (tema)
             dugme.clicked.connect(lambda _=False, t=tutar: self.confirmed.emit(t))
             self.quick_row.insertWidget(sira, dugme)
             self.quick_buttons.append(dugme)

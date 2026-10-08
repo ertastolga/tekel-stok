@@ -44,11 +44,26 @@ from app.services.security_service import ProtectedAction
 from app.ui import metrics
 from app.ui.dialogs.common_dialogs import ask_confirm, scanning_suspended, show_error
 from app.ui.pages.base import Page
-from app.ui.widgets.common import Card, PageHeader, make_label, setup_table, stretch_column
+from app.ui.widgets.common import (
+    Card,
+    FlowLayout,
+    PageHeader,
+    labeled,
+    make_label,
+    setup_table,
+    stretch_column,
+)
 
 log = logging.getLogger(__name__)
 
 DOSYA, SUTUNLAR, ONIZLEME, SONUC = range(4)
+
+
+def _dar_kutu(kutu: QComboBox, karakter: int) -> None:
+    """Kutu en uzun seçeneğe göre değil, verilen karakter sayısına göre
+    genişler; açılır listede tam metin görünür."""
+    kutu.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+    kutu.setMinimumContentsLength(karakter)
 ONIZLEME_SUTUNLARI = ["Satır", "Durum", "Barkod", "Ürün adı", "Değişiklik / sorun"]
 #: Önizlemede bir kerede gösterilen en çok satır (sayılar hepsini kapsar).
 GOSTERIM_SINIRI = 2000
@@ -131,13 +146,18 @@ class ImportPage(Page):
         kart.body.addLayout(satir)
         self.file_info = make_label("", "cardHint", wrap=True)
         kart.body.addWidget(self.file_info)
-        sayfa_satiri = QHBoxLayout()
-        sayfa_satiri.addWidget(make_label("Sayfa:"))
+        # Çalışma sayfası seçimi yalnızca dosya yüklenince görünür (M12b: boş
+        # "Sayfa:" kutusu ilk adımda anlamsızdı).
+        self.sheet_row = QWidget()
+        sayfa_satiri = QHBoxLayout(self.sheet_row)
+        sayfa_satiri.setContentsMargins(0, 0, 0, 0)
+        sayfa_satiri.addWidget(make_label("Çalışma sayfası:"))
         self.sheet_combo = QComboBox()
         self.sheet_combo.activated.connect(lambda _i: self._sayfa_degisti())
         sayfa_satiri.addWidget(self.sheet_combo)
         sayfa_satiri.addStretch(1)
-        kart.body.addLayout(sayfa_satiri)
+        self.sheet_row.setVisible(False)
+        kart.body.addWidget(self.sheet_row)
         kart.body.addStretch(1)
         alt = QHBoxLayout()
         alt.addStretch(1)
@@ -155,22 +175,29 @@ class ImportPage(Page):
             "Her bilgi dosyanın hangi sütununda? Barkod zorunludur; yeni ürün için ad ve "
             "satış fiyatı da gerekir. 'Alış fiyatı' yalnızca katalog bilgisi olarak "
             "saklanır; stok değerini ve son alış fiyatını DEĞİŞTİRMEZ.", "cardHint", wrap=True))
+        # İki çift / satır ve sınırlı kutu genişliği: dosyadaki uzun sütun adları
+        # sayfayı 1000×600'de yatay taşırıyordu (M12b).
         izgara = QGridLayout()
         self.mapping_combos: dict[str, QComboBox] = {}
         for sira, (alan, ad) in enumerate(al.ALAN_ADLARI.items()):
-            izgara.addWidget(QLabel(ad + (" *" if alan in al.ZORUNLU else "")), sira // 3,
-                             (sira % 3) * 2)
+            izgara.addWidget(QLabel(ad + (" *" if alan in al.ZORUNLU else "")), sira // 2,
+                             (sira % 2) * 2)
             kutu = QComboBox()
+            _dar_kutu(kutu, 10)
             self.mapping_combos[alan] = kutu
-            izgara.addWidget(kutu, sira // 3, (sira % 3) * 2 + 1)
+            izgara.addWidget(kutu, sira // 2, (sira % 2) * 2 + 1)
+        izgara.setColumnStretch(1, 1)
+        izgara.setColumnStretch(3, 1)
         kart.body.addLayout(izgara)
 
         secenek = QGridLayout()
         secenek.addWidget(QLabel("Kategorisi olmayan yeni ürünler:"), 0, 0)
         self.default_category_combo = QComboBox()
+        _dar_kutu(self.default_category_combo, 14)
         secenek.addWidget(self.default_category_combo, 0, 1)
         secenek.addWidget(QLabel("Var olan ürünler:"), 1, 0)
         self.policy_combo = QComboBox()
+        _dar_kutu(self.policy_combo, 24)
         for kimlik, ad in ims.POLITIKA_ADLARI.items():
             self.policy_combo.addItem(ad, kimlik)
         self.policy_combo.setCurrentIndex(self.policy_combo.findData(ims.EKLE_VE_GUNCELLE))
@@ -195,22 +222,21 @@ class ImportPage(Page):
                                        "sectionTitle"))
         self.counts_label = make_label("", "cardHint", wrap=True)
         kart.body.addWidget(self.counts_label)
-        ust = QHBoxLayout()
-        ust.addWidget(QLabel("Göster:"))
+        kap = QWidget()
+        ust = FlowLayout(kap, spacing=8)
         self.status_filter = QComboBox()
         self.status_filter.addItem("Tümü", None)
         for durum, ad in ims.DURUM_ADLARI.items():
             self.status_filter.addItem(ad, durum)
         self.status_filter.currentIndexChanged.connect(lambda _i: self._tabloyu_doldur())
-        ust.addWidget(self.status_filter)
-        ust.addStretch(1)
+        ust.addWidget(labeled("Göster:", self.status_filter, ""))
         self.accept_zero_button = QPushButton("Seçili satırlarda sıfır önerisini kabul et")
         self.accept_zero_button.clicked.connect(self._sifir_kabul_secili)
         ust.addWidget(self.accept_zero_button)
         self.report_button = QPushButton("Hata raporunu kaydet…")
         self.report_button.clicked.connect(self._rapor_kaydet)
         ust.addWidget(self.report_button)
-        kart.body.addLayout(ust)
+        kart.body.addWidget(kap)
 
         self.preview_table = QTableWidget(0, len(ONIZLEME_SUTUNLARI))
         setup_table(self.preview_table, ONIZLEME_SUTUNLARI)
@@ -218,8 +244,10 @@ class ImportPage(Page):
         stretch_column(self.preview_table, "Değişiklik / sorun")
         kart.body.addWidget(self.preview_table, 1)
 
-        alanlar = QHBoxLayout()
-        alanlar.addWidget(QLabel("Var olan üründe güncellenecek bilgiler:"))
+        # Akış: dokuz onay kutusu tek satırda 1397 px istiyordu (M12b).
+        kart.body.addWidget(make_label("Var olan üründe güncellenecek bilgiler:"))
+        alan_kabi = QWidget()
+        alanlar = FlowLayout(alan_kabi, spacing=14)
         self.field_checks: dict[str, QCheckBox] = {}
         for alan in ims.GUNCELLENEBILIR:
             kutu = QCheckBox(al.ALAN_ADLARI[alan])
@@ -227,8 +255,7 @@ class ImportPage(Page):
             kutu.toggled.connect(lambda _d: self._ozet_yaz())
             self.field_checks[alan] = kutu
             alanlar.addWidget(kutu)
-        alanlar.addStretch(1)
-        kart.body.addLayout(alanlar)
+        kart.body.addWidget(alan_kabi)
 
         alt = QHBoxLayout()
         geri = QPushButton("◀ Sütunlar")
@@ -289,6 +316,7 @@ class ImportPage(Page):
         self.accepted_zero = set()
         self.file_info.setText("")
         self.sheet_combo.clear()
+        self.sheet_row.setVisible(False)
         self.show_step(DOSYA)
 
     # ===================== 1. Dosya ======================================
@@ -315,6 +343,7 @@ class ImportPage(Page):
             self.sheet_combo.addItem(ad)
         self.sheet_combo.setCurrentText(tablo.sayfa or "")
         self.sheet_combo.setEnabled(len(tablo.sayfalar) > 1)
+        self.sheet_row.setVisible(tablo.bicim == "XLSX")
         bicim = "Excel" if tablo.bicim == "XLSX" else f"CSV ({tablo.kodlama})"
         self.file_info.setText(
             f"{self.path.name} · {bicim} · {len(tablo.satirlar)} satır · "

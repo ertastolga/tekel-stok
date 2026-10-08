@@ -19,11 +19,14 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QScrollArea,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -45,7 +48,14 @@ from app.services.security_service import ProtectedAction
 from app.ui import metrics
 from app.ui.dialogs.common_dialogs import ask_confirm, scanning_suspended, show_error
 from app.ui.pages.base import Page
-from app.ui.widgets.common import Card, EmptyState, PageHeader, make_label, setup_table
+from app.ui.widgets.common import (
+    Card,
+    EmptyState,
+    FlowLayout,
+    PageHeader,
+    make_label,
+    setup_table,
+)
 
 log = logging.getLogger(__name__)
 
@@ -119,25 +129,30 @@ class PricesPage(Page):
         duzen.setSpacing(metrics.PAGE_SPACING)
 
         suzgec = Card()
-        satir = QHBoxLayout()
+        # Akış: süzgeçler dar pencerede alt satıra iner (M12b).
+        kap = QWidget()
+        satir = FlowLayout(kap, spacing=10)
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Ürün adı ya da barkod ara…")
         self.search_edit.setProperty("scannerExempt", True)
+        self.search_edit.setMinimumWidth(280)
         self.search_edit.textChanged.connect(lambda _m: self.refresh())
-        satir.addWidget(self.search_edit, 2)
+        satir.addWidget(self.search_edit)
         self.category_combo = QComboBox()
-        self.category_combo.currentIndexChanged.connect(lambda _i: self.refresh())
-        satir.addWidget(self.category_combo, 1)
         self.supplier_combo = QComboBox()
-        self.supplier_combo.currentIndexChanged.connect(lambda _i: self.refresh())
-        satir.addWidget(self.supplier_combo, 1)
+        for kutu in (self.category_combo, self.supplier_combo):
+            kutu.setSizeAdjustPolicy(
+                QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            kutu.setMinimumContentsLength(16)
+            kutu.currentIndexChanged.connect(lambda _i: self.refresh())
+            satir.addWidget(kutu)
         self.no_cost_check = QCheckBox("Alış fiyatı bilinmeyenler")
         self.no_cost_check.toggled.connect(lambda _d: self.refresh())
         satir.addWidget(self.no_cost_check)
         self.no_price_check = QCheckBox("Fiyatı girilmemişler")
         self.no_price_check.toggled.connect(lambda _d: self.refresh())
         satir.addWidget(self.no_price_check)
-        suzgec.body.addLayout(satir)
+        suzgec.body.addWidget(kap)
         duzen.addWidget(suzgec)
 
         orta = QHBoxLayout()
@@ -145,6 +160,12 @@ class PricesPage(Page):
         sol = QVBoxLayout()
         self.table = QTableWidget(0, len(LISTE_SUTUNLARI))
         setup_table(self.table, LISTE_SUTUNLARI)
+        # Ürün adı okunur genişlikte BAŞLAR (kullanıcı değiştirebilir); dokuz
+        # sütun sığmazsa tablo yatay kaydırılır. Esnetilince ad "Absolut V…"
+        # diye kırpılıyordu (M12b ekran incelemesi).
+        self.table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Interactive)
+        self.table.setColumnWidth(0, 250)
         self.table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self.table.itemSelectionChanged.connect(self._secim_degisti)
         sol.addWidget(self.table, 1)
@@ -157,8 +178,16 @@ class PricesPage(Page):
         self.select_all_button.clicked.connect(self.table.selectAll)
         alt.addWidget(self.select_all_button)
         sol.addLayout(alt)
-        orta.addLayout(sol, 3)
-        orta.addWidget(self._build_side(), 2)
+        orta.addLayout(sol, 1)
+        # Yan panel SABİT genişlikte ve kendi içinde kaydırılır: üç kart
+        # 1366×768'de üst üste biniyordu (M12b ekran incelemesi).
+        yan = QScrollArea()
+        yan.setWidgetResizable(True)
+        yan.setFrameShape(QFrame.Shape.NoFrame)
+        yan.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        yan.setWidget(self._build_side())
+        yan.setFixedWidth(360)
+        orta.addWidget(yan)
         duzen.addLayout(orta, 1)
         return sayfa
 
@@ -170,6 +199,9 @@ class PricesPage(Page):
 
         toplu = _kart("Toplu değişiklik")
         self.operation_combo = QComboBox()
+        self.operation_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.operation_combo.setMinimumContentsLength(20)
         for tur, ad in pm.ISLEM_ADLARI.items():
             self.operation_combo.addItem(ad, tur)
         self.operation_combo.currentIndexChanged.connect(lambda _i: self._islem_degisti())
@@ -178,6 +210,9 @@ class PricesPage(Page):
         self.value_edit.setProperty("scannerExempt", True)
         toplu.body.addWidget(self.value_edit)
         self.rounding_combo = QComboBox()
+        self.rounding_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.rounding_combo.setMinimumContentsLength(20)
         for adim, ad in pm.YUVARLAMA_ADIMLARI.items():
             self.rounding_combo.addItem(f"Yuvarlama: {ad}", adim)
         toplu.body.addWidget(self.rounding_combo)
@@ -192,11 +227,15 @@ class PricesPage(Page):
 
         gecmis = _kart("Seçili ürünün fiyat geçmişi")
         self.timeline_list = QListWidget()
+        self.timeline_list.setWordWrap(True)
+        self.timeline_list.setMinimumHeight(110)
         gecmis.body.addWidget(self.timeline_list)
         duzen.addWidget(gecmis, 1)
 
         gruplar = _kart("Son toplu değişiklikler")
         self.batch_list = QListWidget()
+        self.batch_list.setWordWrap(True)
+        self.batch_list.setMinimumHeight(110)
         self.batch_list.currentRowChanged.connect(lambda _r: self._grup_secildi())
         gruplar.body.addWidget(self.batch_list)
         self.undo_button = QPushButton("Seçili değişikliği geri al")

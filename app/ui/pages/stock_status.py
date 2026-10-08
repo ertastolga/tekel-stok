@@ -20,6 +20,7 @@ from app.ui import metrics
 from app.ui.pages.base import Page
 from app.ui.widgets.common import (
     Card,
+    CardGrid,
     EmptyState,
     PageHeader,
     StatCard,
@@ -50,19 +51,17 @@ class StockStatusPage(Page):
         )
         duzen.setSpacing(metrics.PAGE_SPACING)
 
-        ozet = QHBoxLayout()
-        ozet.setSpacing(metrics.PAGE_SPACING)
         self.value_card = StatCard("STOK DEĞERİ", "-", "Eldeki malın maliyeti")
         self.critical_card = StatCard("KRİTİK", "-")
         self.low_card = StatCard("DÜŞÜK", "-")
         self.check_card = StatCard("KONTROL GEREKLİ", "-", "Stok eksiye düşmüş")
         self.uncounted_card = StatCard("HENÜZ SAYILMADI", "-", "Stoğu bilinmiyor")
-        for kart in (
+        # Dar pencerede kartlar iki satıra iner (M12b: 1000×600'de taşıyordu).
+        self.cards = CardGrid((
             self.value_card, self.critical_card, self.low_card,
             self.check_card, self.uncounted_card,
-        ):
-            ozet.addWidget(kart)
-        duzen.addLayout(ozet)
+        ), spacing=metrics.PAGE_SPACING)
+        duzen.addWidget(self.cards)
 
         filtre = Card()
         satir = QHBoxLayout()

@@ -39,8 +39,14 @@ FONT_ACTION_TITLE_PT = 19.0
 FONT_ACTION_HINT_PT = 11.5
 #: Barkod bekleme ve satış onayı: karşıdan okunmalı.
 FONT_BARCODE_PT = 18.0
-FONT_FLASH_NAME_PT = 24.0
-FONT_FLASH_LINE_PT = 15.0
+#: M12b: 24/15'ten indirildi — yerel çizimde (Windows yazı ölçüleri) dört
+#: satırlık "SATIŞ TAMAMLANDI" şeridi 1000×600'de Kasa bütçesini 25 px aşıyordu.
+FONT_FLASH_NAME_PT = 22.0
+FONT_FLASH_LINE_PT = 14.0
+#: Fiyat Gör: fiyat karşıdan okunur (müşteri de bakar).
+FONT_PRICE_CHECK_PT = 44.0
+#: Hızlı Stok Girişi: büyük adet göstergesi.
+FONT_TOUCH_QTY_PT = 26.0
 
 # --- Boşluklar -----------------------------------------------------------
 PAGE_MARGIN_H = 20
@@ -54,8 +60,12 @@ INPUT_HEIGHT = 44
 BUTTON_HEIGHT = 44
 BIG_BUTTON_HEIGHT = 56
 #: Ana ekran eylem kartı: fare hassasiyeti gerektirmeyecek kadar büyük.
-ACTION_CARD_MIN_HEIGHT = 140
-ACTION_CARD_PRIMARY_MIN_HEIGHT = 180
+#: M12b: 140/180'den indirildi — ana ekranın üç bölümü 1366×768'de daha
+#: az kaydırmayla görünür; başlık + iki satır ipucu yine sığar.
+ACTION_CARD_MIN_HEIGHT = 112
+ACTION_CARD_PRIMARY_MIN_HEIGHT = 150
+#: Ayarlar bölüm listesi: tam dokunma hedefi (liste kendi içinde kaydırılır).
+SECTION_NAV_HEIGHT = 56
 BARCODE_INPUT_HEIGHT = 60
 
 # --- Dokunmatik POS (AVAPOS 15,6") ---------------------------------------
@@ -89,7 +99,9 @@ CELL_SPIN_HEIGHT = 38
 HEADER_PADDING = 30
 
 # --- Son satışlar listesi ------------------------------------------------
-RECENT_MIN_ROWS = 5
+#: M12b: 5 → 4 — yerel yazı ölçüleriyle Hızlı Satış 1000×600 bütçesini aşıyordu;
+#: tablo daha büyük pencerede yine boş alanı doldurur.
+RECENT_MIN_ROWS = 4
 RECENT_NAME_PT = 14.0
 RECENT_TIME_PT = 11.0
 RECENT_ROW_PADDING = 9
@@ -122,6 +134,7 @@ RAHAT_EKLERI: dict[str, int] = {
     "CARD_SPACING": 4,
     "PAGE_SPACING": 4,
     "CART_ROW_HEIGHT": 8,
+    "SECTION_NAV_HEIGHT": 8,
 }
 _TABAN: dict[str, float] = {}
 
@@ -149,6 +162,17 @@ def uygula(olcek: int = 100, yogunluk: str = "NORMAL") -> None:
             g[ad] = int(deger) + (RAHAT_EKLERI[ad] if yogunluk == "RAHAT" else 0)
         else:
             g[ad] = round(float(deger) * olcek / 100.0, 1)
+
+
+def yazi_carpani() -> float:
+    """Geçerli yazı ölçeği (1,0 = %100): sabit genişlikli sütunlar buna göre
+    büyür (M12b: %130'da menü ve ayar bölüm adları kırpılıyordu)."""
+    return FONT_BASE_PT / _taban().get("FONT_BASE_PT", FONT_BASE_PT)
+
+
+def nav_genisligi() -> int:
+    """Sol menünün genişliği, yazı ölçeğiyle."""
+    return round(NAV_WIDTH * yazi_carpani())
 
 
 def sifirla() -> None:

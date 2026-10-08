@@ -85,7 +85,7 @@ AUTOSAVE_MS = 750
 
 #: Kasa sayfasının dikey kenar boşluğu ve öğeler arası boşluk (bütçe §5.2).
 KASA_DIKEY_KENAR = 10
-KASA_ARALIK = 10
+KASA_ARALIK = 8
 
 #: Sonuç şeridinde gösterilebilecek EN UZUN iletiler; şerit yüksekliği bunlarla
 #: ölçülür. Yeni bir uzun ileti eklenirse buraya da eklenir (test denetler).
@@ -180,7 +180,9 @@ class CartSalePage(KatmanSahibi, Page):
         """Tek satır: barkod alanı + dokunma düğmeleri + "⋯" menüsü."""
         self.toolbar = KasaToolbar()
         self.barcode = BarcodeInput("sale")
-        self.barcode.setPlaceholderText("BARKOD BEKLENİYOR — ürünü okutun")
+        # Kısa yer tutucu: sonuç şeridi zaten "BARKOD BEKLENİYOR" der; uzun
+        # metin kompakt alanda kırpılıyordu (M12b).
+        self.barcode.setPlaceholderText("Barkodu okutun…")
         self.barcode.submitted.connect(self._add_by_code)
         self.toolbar.add_field(self.barcode)
         self.search_button = self.toolbar.add_tool(
@@ -195,6 +197,7 @@ class CartSalePage(KatmanSahibi, Page):
         self.price_check_button = self.toolbar.add_tool(
             "🏷 Fiyat Gör", lambda: self.main_window.go_to("fiyat_kontrol"),
             "Okutulan ürünün fiyatını göster, satış yapma (F11)",
+            collapsible=True,                 # dar pencerede "⋯" menüsünde
         )
         self.toolbar.finish()
         # "⋯" menüsü: seyrek kullanılan eylemler. Öznitelik adları V1.1 ile
@@ -931,6 +934,9 @@ class CartSalePage(KatmanSahibi, Page):
         """Tüm satırları sıfırdan kurar (taslak yükleme / sepet boşaltma)."""
         for satir in self._rows.values():
             self.rows_layout.removeWidget(satir)
+            # deleteLater bir sonraki olay turunu bekler; o ana dek eski satır
+            # ekranda kalmasın (satış sonrası "0 TL" ile eski sepet görünüyordu).
+            satir.hide()
             satir.deleteLater()
         self._rows.clear()
         self._highlighted = None
@@ -948,6 +954,7 @@ class CartSalePage(KatmanSahibi, Page):
             if product_id not in mevcut:
                 satir = self._rows.pop(product_id)
                 self.rows_layout.removeWidget(satir)
+                satir.hide()
                 satir.deleteLater()
                 if self._highlighted is satir:
                     self._highlighted = None

@@ -58,7 +58,13 @@ from app.ui.dialogs.common_dialogs import (
 )
 from app.ui.pages.base import Page
 from app.ui.pages.settings.keys import BOLUMLER
-from app.ui.widgets.common import PageHeader, make_label, setup_table, stretch_column
+from app.ui.widgets.common import (
+    PageHeader,
+    make_label,
+    setup_table,
+    stretch_column,
+    wrap_path,
+)
 
 log = logging.getLogger(__name__)
 
@@ -92,12 +98,18 @@ class SettingsPage(Page):
                                  metrics.PAGE_MARGIN_H, metrics.PAGE_MARGIN_V)
         yatay.setSpacing(metrics.PAGE_SPACING)
 
+        # Bölüm listesi kendi içinde kaydırılır: dokuz düğme küçük pencerede
+        # sıkışıp kenarları üst üste biniyordu (M12b ekran incelemesi).
         sutun = QWidget()
-        sutun.setFixedWidth(BOLUM_SUTUNU)
         self._bolum_duzeni = QVBoxLayout(sutun)
-        self._bolum_duzeni.setContentsMargins(0, 0, 0, 0)
+        self._bolum_duzeni.setContentsMargins(0, 0, 4, 0)
         self._bolum_duzeni.setSpacing(6)
-        yatay.addWidget(sutun)
+        sutun_kabi = QScrollArea()
+        sutun_kabi.setWidgetResizable(True)
+        sutun_kabi.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        sutun_kabi.setFixedWidth(round(BOLUM_SUTUNU * metrics.yazi_carpani()))
+        sutun_kabi.setWidget(sutun)
+        yatay.addWidget(sutun_kabi)
 
         self.section_stack = QStackedWidget()
         yatay.addWidget(self.section_stack, 1)
@@ -130,6 +142,8 @@ class SettingsPage(Page):
     def _bolum_ekle(self, kimlik: str, baslik: str, icerik: QWidget) -> None:
         kaydirma = QScrollArea()
         kaydirma.setWidgetResizable(True)
+        # Yatay kaydırma yok: uzun metinler sarılır (yollar dahil; M12b).
+        kaydirma.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         kaydirma.setWidget(icerik)
         self.section_stack.addWidget(kaydirma)
         self.bolumler[kimlik] = icerik
@@ -137,7 +151,7 @@ class SettingsPage(Page):
         dugme = QPushButton(baslik)
         dugme.setObjectName("sectionNav")
         dugme.setCheckable(True)
-        dugme.setMinimumHeight(metrics.TOUCH_TARGET_MIN)
+        dugme.setMinimumHeight(metrics.SECTION_NAV_HEIGHT)
         dugme.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         dugme.clicked.connect(lambda _=False, k=kimlik: self.show_section(k))
         self._bolum_duzeni.addWidget(dugme)
@@ -234,7 +248,10 @@ class SettingsPage(Page):
 
     def _satir(self, etiket: str, *gerecler: QWidget) -> QHBoxLayout:
         satir = QHBoxLayout()
-        satir.addWidget(make_label(etiket))
+        # Etiket sarılabilir: uzun etiketli satırlar bölümü yatay taşırıyordu.
+        etiket_gereci = make_label(etiket, wrap=True)
+        etiket_gereci.setMinimumWidth(140)
+        satir.addWidget(etiket_gereci, 0)
         for gerec in gerecler:
             satir.addWidget(gerec)
         satir.addStretch(1)
@@ -872,8 +889,8 @@ class SettingsPage(Page):
         self.backup_status.setText(
             (f"Son yedek: {fmt_datetime(datetime.datetime.fromtimestamp(son))}"
              if son else "Henüz yedek alınmadı.")
-            + f"\nOtomatik: {durum['otomatik_klasor']}"
-            + f"\nElle: {durum['elle_klasor']}"
+            + f"\nOtomatik: {wrap_path(durum['otomatik_klasor'])}"
+            + f"\nElle: {wrap_path(durum['elle_klasor'])}"
         )
         for yedek in yedekler[:50]:
             boyut = yedek.size_bytes / 1024 / 1024

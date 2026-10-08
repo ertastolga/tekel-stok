@@ -150,3 +150,21 @@ def test_katmanlardaki_her_dugme_dokunma_boyutunda_ve_katman_sigar(
         ]
         assert kucuk == []
         sayfa.close_overlay()
+
+
+@pytest.mark.parametrize("boyut, katli", [((1000, 600), True), ((1920, 1080), False)])
+def test_dar_pencerede_fiyat_gor_menuye_katlanir(window, qapp, boyut, katli):
+    """M12b: 1000×600'de barkod alanı "Bar…" diye eziliyordu. Yer kalmazsa
+    "Fiyat Gör" düğmesi "⋯" menüsüne taşınır (metin ve kısayol aynı); genişte
+    düğme yerinde, menü girişi gizli. (Alanın gerçek genişliği yerel çizimli
+    ekran görüntülerinde doğrulanır: offscreen yazı ölçüleri farklıdır.)"""
+    sayfa = _hazirla(window, qapp, boyut, "sepetli_satis")
+    menude = [e for e in sayfa.toolbar.more_menu.actions() if "Fiyat Gör" in e.text()]
+    assert len(menude) == 1, "menüde tek giriş"
+    assert sayfa.toolbar.collapsed() is katli
+    assert sayfa.price_check_button.isVisibleTo(sayfa) is not katli
+    assert menude[0].isVisible() is katli
+    if katli:
+        menude[0].trigger()
+        qapp.processEvents()
+        assert window._current_key == "fiyat_kontrol"

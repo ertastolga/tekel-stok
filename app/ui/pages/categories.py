@@ -41,7 +41,7 @@ from app.ui.dialogs.common_dialogs import (
     show_info,
 )
 from app.ui.pages.base import Page
-from app.ui.widgets.common import PageHeader, make_label
+from app.ui.widgets.common import FlowLayout, PageHeader, make_label
 
 log = logging.getLogger(__name__)
 
@@ -95,6 +95,8 @@ class CategoriesPage(Page):
         duzen.addWidget(self.uncategorized_label)
 
         dugmeler = QHBoxLayout()
+        sol = QWidget()
+        akis = FlowLayout(sol, spacing=8)
         self.rename_button = QPushButton("Yeniden adlandır")
         self.rename_button.clicked.connect(self.rename_selected)
         self.move_button = QPushButton("Taşı")
@@ -108,9 +110,10 @@ class CategoriesPage(Page):
         self.reactivate_button.clicked.connect(self.reactivate_selected)
         for dugme in (self.rename_button, self.move_button, self.merge_button,
                       self.reactivate_button):
-            dugmeler.addWidget(dugme)
-        dugmeler.addStretch(1)
-        dugmeler.addWidget(self.deactivate_button)
+            akis.addWidget(dugme)
+        dugmeler.addWidget(sol, 1)
+        dugmeler.addWidget(self.deactivate_button,
+                           alignment=Qt.AlignmentFlag.AlignTop)        # yıkıcı: ayrı, sağda
         duzen.addLayout(dugmeler)
         self.root.addWidget(govde, 1)
         self._dugmeleri_guncelle()

@@ -48,8 +48,10 @@ from app.ui.widgets.barcode_input import BarcodeInput, FocusKeeper
 from app.ui.widgets.common import (
     Card,
     EmptyState,
+    FlowLayout,
     PageHeader,
     ResultBanner,
+    labeled,
     make_label,
     setup_table,
     stretch_column,
@@ -104,11 +106,16 @@ class StockEntryPage(Page):
             metrics.PAGE_MARGIN_H, metrics.PAGE_MARGIN_V,
             metrics.PAGE_MARGIN_H, metrics.PAGE_MARGIN_V,
         )
-        duzen.setSpacing(metrics.PAGE_SPACING)
+        # Sıkı aralık: 1366×768'de tablo için yer kalsın (M12b ekran incelemesi:
+        # bileşenler üst üste biniyordu).
+        duzen.setSpacing(8)
 
         duzen.addWidget(self._build_top())
 
         self.banner = ResultBanner()
+        # İlk iletiye dek gizli: boş beyaz kutu anlamsızdı (M12b).
+        self.banner.setVisible(False)
+        self.banner.shown.connect(lambda _tur: self.banner.setVisible(True))
         duzen.addWidget(self.banner)
 
         self.table = QTableWidget(0, len(SATIR_SUTUNLARI))
@@ -136,10 +143,10 @@ class StockEntryPage(Page):
     # ===================== Kurulum =======================================
     def _build_top(self) -> QWidget:
         kart = Card()
+        kart.body.setSpacing(8)
 
-        ust = QHBoxLayout()
-        ust.setSpacing(10)
-        ust.addWidget(make_label("Tedarikçi"))
+        kap = QWidget()
+        ust = FlowLayout(kap, spacing=10)
         self.supplier_combo = QComboBox()
         self.supplier_combo.setEditable(True)
         self.supplier_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
@@ -148,38 +155,35 @@ class StockEntryPage(Page):
         self.supplier_combo.lineEdit().setPlaceholderText("Seçin ya da yazın")
         self.supplier_combo.lineEdit().editingFinished.connect(self._baslik_yaz)
         self.supplier_combo.activated.connect(lambda _i: self._baslik_yaz())
-        ust.addWidget(self.supplier_combo)
+        ust.addWidget(labeled("Tedarikçi", self.supplier_combo, ""))
 
-        ust.addWidget(make_label("Fatura / İrsaliye No"))
         self.invoice_edit = QLineEdit()
         self.invoice_edit.setProperty("scannerExempt", True)
         self.invoice_edit.setMaximumWidth(180)
         self.invoice_edit.editingFinished.connect(self._baslik_yaz)
-        ust.addWidget(self.invoice_edit)
+        ust.addWidget(labeled("Fatura / İrsaliye No", self.invoice_edit, ""))
 
-        ust.addWidget(make_label("Tarih"))
         self.date_edit = QDateEdit()
         self.date_edit.setCalendarPopup(True)
         self.date_edit.setDisplayFormat("dd.MM.yyyy")
         self.date_edit.setProperty("scannerExempt", True)
         self.date_edit.dateChanged.connect(lambda _d: self._baslik_yaz())
-        ust.addWidget(self.date_edit)
-        ust.addStretch(1)
-        kart.body.addLayout(ust)
+        ust.addWidget(labeled("Tarih", self.date_edit, ""))
+        kart.body.addWidget(kap)
 
-        self.barcode = BarcodeInput("stock")
-        self.barcode.setPlaceholderText("Gelen ürünün barkodunu okutun…")
-        self.barcode.submitted.connect(self._add_by_code)
-        kart.body.addWidget(self.barcode)
-
+        # Barkod alanı ve "son okutulana ekle" düğmeleri TEK satırda.
         hizli = QHBoxLayout()
         hizli.setSpacing(8)
-        hizli.addWidget(make_label("Son okutulana ekle:"))
+        self.barcode = BarcodeInput("stock")
+        self.barcode.set_compact(True)          # dokunma düğmeleriyle aynı satırda
+        self.barcode.setPlaceholderText("Gelen ürünün barkodunu okutun…")
+        self.barcode.submitted.connect(self._add_by_code)
+        hizli.addWidget(self.barcode, 1)
+        hizli.addWidget(make_label("Son okutulana:", "cardHint"))
         for adet in QUICK_QUANTITIES:
             dugme = QPushButton(f"+{adet}")
             dugme.clicked.connect(lambda _=False, a=adet: self._add_quick(a))
             hizli.addWidget(dugme)
-        hizli.addStretch(1)
         kart.body.addLayout(hizli)
         return kart
 
@@ -226,7 +230,7 @@ class StockEntryPage(Page):
         self.review_table = QTableWidget(0, len(INCELEME_SUTUNLARI))
         setup_table(self.review_table, INCELEME_SUTUNLARI)
         self.review_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
-        self.review_table.setMaximumHeight(150)
+        self.review_table.setMaximumHeight(124)
         self.review_table.itemSelectionChanged.connect(
             lambda: self.update_price_button.setEnabled(bool(self._inceleme_secili())))
         self.review_card.body.addWidget(self.review_table)
@@ -235,7 +239,8 @@ class StockEntryPage(Page):
     def _build_bottom(self) -> QHBoxLayout:
         alt = QHBoxLayout()
         alt.setSpacing(10)
-        self.total_label = make_label("Toplam: 0 TL", "cardValue")
+        self.total_label = make_label("Toplam: 0 TL", "cardValue", wrap=True)
+        self.total_label.setTextFormat(Qt.TextFormat.RichText)
         alt.addWidget(self.total_label)
         alt.addStretch(1)
 
@@ -784,9 +789,12 @@ class StockEntryPage(Page):
         self._secim_degisti()
 
         bilinmeyen = sum(1 for s in satirlar if s["cost_is_estimated"])
+        # Açıklama KÜÇÜK ikinci satırdadır: 26 pt tek satır sayfayı 1200 px'e
+        # genişletip yatay kaydırma açtırıyordu (M12b ekran incelemesi).
         self.total_label.setText(
             f"Toplam: {format_tl(self._total())}"
-            + (f"  (+{bilinmeyen} kalem fiyatı bilinmiyor)" if bilinmeyen else "")
+            + (f"<br><span style='font-size:{metrics.FONT_SMALL_PT}pt; font-weight:400;'>"
+               f"+{bilinmeyen} kalem fiyatı bilinmiyor</span>" if bilinmeyen else "")
         )
         self.total_label.setStyleSheet(
             f"color: {theme.STOCK_DARK};" if dolu else ""

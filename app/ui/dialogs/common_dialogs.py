@@ -156,7 +156,7 @@ class PackConfirmDialog(QDialog):
         duzen.setSpacing(14)
 
         soru = QLabel(f"1 koli {product_name} = {quantity} {unit_label.lower()}.")
-        soru.setFont(theme.base_font(15, bold=True))
+        soru.setObjectName("packQuestion")
         soru.setWordWrap(True)
         duzen.addWidget(soru)
         duzen.addWidget(QLabel("Bu şekilde satılsın mı?"))
