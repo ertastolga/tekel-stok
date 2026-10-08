@@ -189,3 +189,25 @@ def test_sayfalar_ilk_gosterildiklerinde_kurulur(qapp, services, bira):
     assert set(win.pages.hazir()) == {"sepetli_satis", "hizli_satis"}, (
         "kapanış kurulmamış sayfa kurmadı"
     )
+
+
+def test_secili_menu_ogesi_kaydirilip_gorunur_kalir(window, qapp):
+    """M12d son kapı ekran görüntüsü (1536×864 %125, Geçmiş): menü kaydırılabilir
+    olduğunda seçili öğe görünür alanın ALTINDA kalıyordu. Kutucuk ya da F-tuşuyla
+    gidilen sayfanın menü öğesi kaydırılarak görünür olmalı (kapalı grup açılınca da)."""
+    from PySide6.QtCore import QPoint
+
+    window.resize(1000, 600)
+    qapp.processEvents()
+    kaydirma = window.nav_scroll
+    alan = kaydirma.viewport()
+    for anahtar in ("barkod_testi", "ana_ekran", "stok_durumu", "sistem_durumu"):
+        window.go_to(anahtar)
+        qapp.processEvents()
+        assert kaydirma.verticalScrollBar().maximum() > 0, "menü bu boyutta kaydırılır"
+        dugme = window.nav_buttons[anahtar]
+        assert dugme.isChecked() and dugme.isVisibleTo(window), anahtar
+        ust = dugme.mapTo(alan, QPoint(0, 0)).y()
+        assert 0 <= ust and ust + dugme.height() <= alan.height(), (
+            f"{anahtar}: öğe {ust}..{ust + dugme.height()}, görünür alan 0..{alan.height()}"
+        )

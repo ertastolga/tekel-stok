@@ -204,6 +204,7 @@ class MainWindow(QMainWindow):
         self.nav_layout.setSpacing(0)
         kaydirma.setWidget(icerik)
         duzen.addWidget(kaydirma, 1)
+        self.nav_scroll = kaydirma
 
         # Alt bilgi TEK satırdır; kısayol özeti ipucundadır. Altı satırlık
         # kısayol listesi menüyü itip YÖNETİM sayfalarını kaydırma gerektiren
@@ -421,10 +422,22 @@ class MainWindow(QMainWindow):
         dugme = self.nav_buttons.get(key or "")
         if dugme is not None:
             dugme.setChecked(True)
+            # Menü kaydırılabiliyorsa seçili öğe görünür alana getirilir (M12d:
+            # %125'te Geçmiş seçiliyken öğe alanın altında kalıyordu). Bir olay
+            # turu sonra: kapalı grup önce açılsın, yerleşim otursun.
+            QTimer.singleShot(0, self, self._secili_nav_gorunsun)
         elif self.nav_group.checkedButton() is not None:
             self.nav_group.setExclusive(False)
             self.nav_group.checkedButton().setChecked(False)
             self.nav_group.setExclusive(True)
+
+    def _secili_nav_gorunsun(self) -> None:
+        dugme = self.nav_buttons.get(self._current_key or "")
+        if dugme is None or not dugme.isVisibleTo(self):
+            return
+        # Yeni açılan grubun yüksekliği kaydırma alanına önce işlensin.
+        QApplication.sendPostedEvents(None, QEvent.Type.LayoutRequest)
+        self.nav_scroll.ensureWidgetVisible(dugme, 0, 8)
 
     def go_to(self, key: str) -> None:
         if key not in self.pages:

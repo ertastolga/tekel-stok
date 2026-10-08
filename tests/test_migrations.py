@@ -5,6 +5,7 @@ her şema değişikliği bir göç olarak eklenir ve mevcut veri korunur.
 """
 from __future__ import annotations
 
+import os
 import sqlite3
 import subprocess
 import sys
@@ -259,9 +260,14 @@ def test_miktar_mantigi_merkezidir():
 def test_kendi_kendini_sinama_gecer(tmp_path):
     """``--self-test`` donmuş kod yollarını da doğrular; burada kaynaktan."""
     rapor = tmp_path / "rapor.txt"
+    # Çıktı kodlaması ortamdan bağımsız: çocuk süreç UTF-8 yazar, burada UTF-8
+    # okunur (PYTHONIOENCODING=utf-8 ile çalışan derlemede cp1254 okuma
+    # okuyucu iş parçacığında UnicodeDecodeError uyarısı veriyordu — M12d).
     sonuc = subprocess.run(
         [sys.executable, "-m", "app.main", "--self-test", str(rapor)],
         cwd=str(ROOT), capture_output=True, text=True, timeout=180,
+        encoding="utf-8", errors="replace",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
     assert sonuc.returncode == 0, sonuc.stdout + sonuc.stderr
     assert rapor.exists()
