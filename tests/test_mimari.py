@@ -95,8 +95,12 @@ def test_kasa_modullerinde_ic_ice_olay_dongusu_yok():
         yol = ROOT / goreli
         if not yol.exists():          # henüz oluşturulmamış Kasa modülü
             continue
-        if "QEventLoop" in yol.read_text(encoding="utf-8"):
+        metin = yol.read_text(encoding="utf-8")
+        if "QEventLoop" in metin:
             ihlaller.append(goreli)
+        # Katmanlar hiçbir şeyi ``exec`` ile açmaz (V1.2 M3b).
+        if goreli.endswith("kasa_overlays.py") and ".exec(" in metin:
+            ihlaller.append(f"{goreli}: exec")
     assert ihlaller == [], f"Kasa'da iç içe olay döngüsü: {ihlaller}"
 
 

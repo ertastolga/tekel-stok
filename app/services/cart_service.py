@@ -20,9 +20,10 @@ import logging
 import sqlite3
 from dataclasses import dataclass, field
 
-from app.core.clock import now_utc
+from app.core.clock import local_now, now_utc
 from app.core.db import Database
 from app.core.errors import (
+    BekletmeSiniri,
     BosSepet,
     EskiOturumSepeti,
     FiyatDegisti,
@@ -117,6 +118,14 @@ class Cart:
     def clear(self) -> None:
         self.lines.clear()
 
+
+#: Taslak türleri (şema v2). AUTOSAVE: üzerinde çalışılan sepetin otomatik
+#: kaydı (açılışta "devam et?" sorulur). PARKED: kasiyerin beklettiği sepet.
+TASLAK_OTOMATIK = "AUTOSAVE"
+TASLAK_BEKLEYEN = "PARKED"
+
+#: Aynı anda en fazla bu kadar sepet bekletilir (kasa ekranı sade kalsın).
+BEKLETME_SINIRI = 9
 
 #: Sepet satırı sorun türleri (Türkçe tanımlayıcılar).
 SORUN_FIYAT_DEGISTI = "FIYAT_DEGISTI"
@@ -238,7 +247,8 @@ class CartService:
         return degisen
 
     # -- Taslak kalıcılığı -------------------------------------------------
-    def save_draft(self, cart: Cart, label: str | None = None) -> int:
+    def save_draft(self, cart: Cart, label: str | None = None,
+                   kind: str = TASLAK_OTOMATIK) -> int:
         """Sepeti diske yazar. Stok ve ciroya HİÇBİR ETKİSİ YOKTUR.
 
         * Taslak yazısı veriyi "değişti" saymaz (``mutating=False``): sepet
@@ -260,30 +270,107 @@ class CartService:
         with self.db.transaction(mutating=False) as conn:
             if cart.draft_id is not None:
                 guncellenen = conn.execute(
-                    "UPDATE cart_drafts SET updated_at_utc = ?, label = COALESCE(?, label) "
-                    " WHERE id = ? AND status = 'OPEN'",
-                    (now, label, cart.draft_id),
+                    "UPDATE cart_drafts SET updated_at_utc = ?, label = COALESCE(?, label), "
+                    "  kind = ? WHERE id = ? AND status = 'OPEN'",
+                    (now, label, kind, cart.draft_id),
                 ).rowcount
                 if guncellenen == 0:
                     cart.draft_id = None
             if cart.draft_id is None:
                 cart.draft_id = conn.execute(
-                    "INSERT INTO cart_drafts(label, status, created_at_utc, updated_at_utc) "
-                    "VALUES(?, 'OPEN', ?, ?)",
-                    (label, now, now),
+                    "INSERT INTO cart_drafts(label, status, created_at_utc, updated_at_utc, "
+                    "  kind) VALUES(?, 'OPEN', ?, ?, ?)",
+                    (label, now, now, kind),
                 ).lastrowid
             conn.execute(
                 "DELETE FROM cart_draft_lines WHERE draft_id = ?", (cart.draft_id,)
             )
             conn.executemany(
                 "INSERT INTO cart_draft_lines(draft_id, line_no, product_id, quantity, "
-                "  unit_price) VALUES(?,?,?,?,?)",
+                "  unit_price, product_name_snapshot, barcode_used, barcode_multiplier) "
+                "VALUES(?,?,?,?,?,?,?,?)",
                 [
-                    (cart.draft_id, sira, line.product_id, line.quantity, line.unit_price)
+                    (cart.draft_id, sira, line.product_id, line.quantity, line.unit_price,
+                     line.product_name, line.barcode_used, max(1, int(line.multiplier)))
                     for sira, line in enumerate(cart.lines, start=1)
                 ],
             )
         return cart.draft_id
+
+    # -- Bekleyen sepetler (F1) --------------------------------------------
+    def park(self, cart: Cart) -> int:
+        """Sepeti BEKLETİR: "Müşteri n · 14:32" adıyla saklanır.
+
+        Kasiyer yeni müşteriye hemen başlayabilir; bekleyen sepet yeniden
+        açılınca fiyatları doğrulanır, ASLA kendiliğinden onarılmaz. Çağıran,
+        bekletilen sepetin yerine boş bir sepet koyar.
+        """
+        if cart.is_empty:
+            raise BosSepet()
+        if self.parked_count() >= BEKLETME_SINIRI:
+            raise BekletmeSiniri(BEKLETME_SINIRI)
+        an = local_now()
+        bugun = self.settings.calendar().today()
+        sira = self._bugun_bekletilen(bugun) + 1
+        etiket = f"Müşteri {sira} · {an.strftime('%H:%M')}"
+        draft_id = self.save_draft(cart, label=etiket, kind=TASLAK_BEKLEYEN)
+        with self.db.transaction(mutating=False) as conn:
+            conn.execute(
+                "UPDATE cart_drafts SET parked_at_utc = ? WHERE id = ?",
+                (now_utc(), draft_id),
+            )
+        return draft_id
+
+    def _bugun_bekletilen(self, bugun: str) -> int:
+        """Bu iş gününde bekletilmiş sepet sayısı (etiket numarası için)."""
+        takvim = self.settings.calendar()
+        satirlar = self.db.query(
+            "SELECT parked_at_utc FROM cart_drafts WHERE kind = 'PARKED' "
+            "  AND parked_at_utc IS NOT NULL ORDER BY id DESC LIMIT 200"
+        )
+        from datetime import datetime
+
+        return sum(
+            1 for r in satirlar
+            if takvim.business_date_for(datetime.fromtimestamp(r["parked_at_utc"])) == bugun
+        )
+
+    def parked_count(self) -> int:
+        return int(self.db.scalar(
+            "SELECT COUNT(*) FROM cart_drafts WHERE status = 'OPEN' AND kind = 'PARKED'",
+            default=0,
+        ))
+
+    def parked_carts(self) -> list[sqlite3.Row]:
+        """Bekleyen sepetler, bekletilme sırasıyla (eski önce)."""
+        return self.db.query(
+            "SELECT d.*, "
+            "  (SELECT COUNT(*) FROM cart_draft_lines l WHERE l.draft_id = d.id) AS satir_sayisi, "
+            "  (SELECT COALESCE(SUM(l.quantity), 0) FROM cart_draft_lines l "
+            "     WHERE l.draft_id = d.id) AS urun_adedi, "
+            "  (SELECT COALESCE(SUM(l.quantity * l.unit_price), 0) FROM cart_draft_lines l "
+            "     WHERE l.draft_id = d.id) AS toplam "
+            "  FROM cart_drafts d WHERE d.status = 'OPEN' AND d.kind = 'PARKED' "
+            " ORDER BY d.parked_at_utc, d.id"
+        )
+
+    def resume_parked(self, draft_id: int) -> tuple[Cart, list[LineIssue]]:
+        """Bekleyen sepeti açar: üzerinde çalışılan sepet olur (AUTOSAVE).
+
+        Saklanan birim fiyatlar KORUNUR; güncel kayıtlarla farkı ``validate``
+        bildirir (fiyat değişti / pasif / fiyatsız / silinmiş). Hiçbiri
+        kendiliğinden düzeltilmez.
+        """
+        with self.db.transaction(mutating=False) as conn:
+            acik = conn.execute(
+                "UPDATE cart_drafts SET kind = 'AUTOSAVE', updated_at_utc = ? "
+                " WHERE id = ? AND status = 'OPEN' AND kind = 'PARKED'",
+                (now_utc(), draft_id),
+            ).rowcount
+        if not acik:
+            raise BosSepet()
+        cart = self.load_draft(draft_id)
+        return cart, self.validate(cart)
 
     def autosave(self, cart: Cart) -> int | None:
         """Sepetin GÜNCEL hâlini diske yansıtır (sayfa bunu gecikmeli çağırır).
@@ -299,25 +386,33 @@ class CartService:
             return None
         return self.save_draft(cart)
 
-    def open_drafts(self) -> list[sqlite3.Row]:
+    def open_drafts(self, kind: str | None = None) -> list[sqlite3.Row]:
+        """Açık taslaklar; ``kind`` verilirse yalnızca o tür (kurtarma AUTOSAVE)."""
+        kosul = "" if kind is None else " AND d.kind = ?"
         return self.db.query(
             "SELECT d.*, (SELECT COUNT(*) FROM cart_draft_lines l "
             "               WHERE l.draft_id = d.id) AS satir_sayisi "
-            "  FROM cart_drafts d WHERE d.status = 'OPEN' "
-            " ORDER BY d.updated_at_utc DESC"
+            "  FROM cart_drafts d WHERE d.status = 'OPEN'" + kosul +
+            " ORDER BY d.updated_at_utc DESC",
+            () if kind is None else (kind,),
         )
 
     def load_draft(self, draft_id: int) -> Cart:
         rows = self.db.query(
             "SELECT l.*, p.name FROM cart_draft_lines l "
-            "  JOIN products p ON p.id = l.product_id "
+            "  LEFT JOIN products p ON p.id = l.product_id "
             " WHERE l.draft_id = ? ORDER BY l.line_no",
             (draft_id,),
         )
         cart = Cart(draft_id=draft_id, generation=self.db.generation)
         for row in rows:
             cart.lines.append(
-                CartLine(row["product_id"], row["name"], row["quantity"], row["unit_price"])
+                CartLine(
+                    row["product_id"],
+                    row["name"] or row["product_name_snapshot"] or "?",
+                    row["quantity"], row["unit_price"],
+                    row["barcode_used"], int(row["barcode_multiplier"] or 1),
+                )
             )
         return cart
 

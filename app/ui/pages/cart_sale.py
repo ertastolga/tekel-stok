@@ -42,7 +42,12 @@ from PySide6.QtWidgets import (
 from app.core.errors import DomainError
 from app.core.models import PaymentMethod
 from app.core.money import format_tl
-from app.services.cart_service import SORUN_FIYAT_DEGISTI, LineIssue
+from app.services.cart_service import (
+    SORUN_FIYAT_DEGISTI,
+    TASLAK_BEKLEYEN,
+    TASLAK_OTOMATIK,
+    LineIssue,
+)
 from app.ui import metrics, shortcuts, sound, theme
 from app.ui.dialogs.common_dialogs import (
     PackConfirmDialog,
@@ -61,6 +66,7 @@ from app.ui.widgets.common import (
     make_label,
 )
 from app.ui.widgets.kasa import KasaToolbar, SonucSeridi
+from app.ui.widgets.kasa_overlays import BekleyenlerPanel
 
 log = logging.getLogger(__name__)
 
@@ -92,6 +98,10 @@ SERIT_ORNEKLERI = (
      "duruyor.", ""),
 )
 
+#: Katman durumları. Okutmayı KABUL ETMEYEN katmanlar burada listelenir.
+KATMAN_BEKLEYENLER = "BEKLEYENLER"
+OKUTMA_KAPALI_KATMANLAR = {KATMAN_BEKLEYENLER, "PARA_USTU"}
+
 #: Ayar okunamazsa kullanılan ekran bekletme süresi.
 #: ``schema.DEFAULT_SETTINGS["customer_display_hold_ms"]`` ile aynı değer.
 FALLBACK_DISPLAY_HOLD_MS = 4000
@@ -113,6 +123,11 @@ class CartSalePage(Page):
         self._issues: dict[int, LineIssue] = {}
         self._checkout_busy = False
         self._display_hold = False
+        #: Katman durum makinesi (plan §5.2): aynı anda en fazla bir katman.
+        self._overlay_state: str | None = None
+        self._overlay = None
+        self._overlay_token = None
+        self._parked_panel: BekleyenlerPanel | None = None
 
         govde = QWidget()
         duzen = QVBoxLayout(govde)
@@ -159,6 +174,12 @@ class CartSalePage(Page):
         self.barcode.setPlaceholderText("BARKOD BEKLENİYOR — ürünü okutun")
         self.barcode.submitted.connect(self._add_by_code)
         self.toolbar.add_field(self.barcode)
+        self.park_button = self.toolbar.add_tool(
+            "Beklet", self.park_current, "Sepeti beklet, yeni müşteriye başla"
+        )
+        self.parked_button = self.toolbar.add_tool(
+            "Bekleyenler (0)", self.show_parked, "Bekleyen sepetleri göster"
+        )
         self.toolbar.finish()
         # "⋯" menüsü: seyrek kullanılan eylemler. Öznitelik adları V1.1 ile
         # aynıdır (``undo_button``, ``clear_button``, ``mode_button``).
@@ -261,9 +282,13 @@ class CartSalePage(Page):
         self.barcode.setFocus()
         self._offer_draft_recovery()
         self._render()
+        self._refresh_parked_count()
         self._show_ready()
 
     def on_deactivated(self) -> None:
+        # Açık katman "vazgeç" anlamıyla kapanır ve okutma askısını bırakır;
+        # bağlam ANCAK bundan sonra değişir.
+        self.close_overlay()
         self.focus_keeper.stop()
         # Ekrandan çıkarken sepet KAYBOLMAZ: taslak HEMEN diske yazılır.
         self._autosave_now()
@@ -307,7 +332,8 @@ class CartSalePage(Page):
         """Yarım kalmış sepet KENDİLİĞİNDEN tamamlanmaz; kullanıcı karar verir."""
         if not self.cart.is_empty:
             return
-        taslaklar = self.services.cart.open_drafts()
+        # Yalnızca otomatik kayıt kurtarılır; bekletilen sepetler "Bekleyenler"de.
+        taslaklar = self.services.cart.open_drafts(kind=TASLAK_OTOMATIK)
         if not taslaklar:
             return
         taslak = taslaklar[0]
@@ -342,7 +368,11 @@ class CartSalePage(Page):
         self._add_by_code(event.code)
 
     def _add_by_code(self, raw: str) -> None:
+        """Okutmanın ve elle girişin TEK girişi (yönlendirici + barkod alanı)."""
         if self._checkout_busy:
+            return
+        if self._overlay_state in OKUTMA_KAPALI_KATMANLAR:
+            self._overlay.notify_blocked()
             return
         eslesme = self.services.barcodes.resolve(raw)
         if eslesme is None:
@@ -629,6 +659,169 @@ class CartSalePage(Page):
         if satis["business_date"] == bugun:
             return True
         return self.guard_require(ProtectedAction.GECMIS_SATIS_GERI_AL)
+
+    # ===================== Katmanlar =====================================
+    @property
+    def overlay_state(self) -> str | None:
+        return self._overlay_state
+
+    def _open_overlay(self, state: str, overlay, block_scans: bool) -> None:
+        self.close_overlay()
+        self._overlay_state = state
+        self._overlay = overlay
+        if block_scans:
+            self._overlay_token = self.main_window.router.suspend(
+                f"kasa katmanı: {state}", overlay.notify_blocked
+            )
+        self._set_controls_enabled(False)
+        overlay.cover(self)
+
+    def close_overlay(self) -> bool:
+        """Açık katmanı "vazgeç" anlamıyla kapatır; açık katman yoksa ``False``."""
+        if self._overlay is None:
+            return False
+        katman = self._overlay
+        try:
+            katman.hide()
+        finally:
+            if self._overlay_token is not None:
+                self.main_window.router.resume(self._overlay_token)
+                self._overlay_token = None
+            self._overlay = None
+            self._overlay_state = None
+            self._set_controls_enabled(True)
+            self.barcode.setFocus()
+        return True
+
+    def _set_controls_enabled(self, enabled: bool) -> None:
+        """Katman açıkken sepet, araç çubuğu ve ödeme denetimleri kapalıdır."""
+        for dugme in self.toolbar.tools:
+            dugme.setEnabled(enabled)
+        self.toolbar.more_button.setEnabled(enabled)
+        self.scroll.setEnabled(enabled)
+        self.apply_prices_button.setEnabled(enabled)
+        if enabled:
+            self._set_payment_enabled(not self._checkout_busy)
+        else:
+            self.cash_button.setEnabled(False)
+            self.card_button.setEnabled(False)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        if self._overlay is not None:
+            self._overlay.setGeometry(self.rect())
+
+    # ===================== Bekleyen sepetler (F1) ========================
+    def _refresh_parked_count(self) -> None:
+        try:
+            adet = self.services.cart.parked_count()
+        except Exception:
+            log.exception("Bekleyen sepet sayısı okunamadı")
+            return
+        self.parked_button.setText(f"Bekleyenler ({adet})")
+
+    def park_current(self) -> None:
+        """Beklet: sepet "Müşteri n · ss:dd" adıyla saklanır, yeni sepet açılır."""
+        if self._checkout_busy:
+            return
+        if self.cart.is_empty:
+            sound.error()
+            self.banner.show_error("Sepet boş.", "Bekletilecek ürün yok.")
+            return
+        self._autosave_timer.stop()
+        try:
+            draft_id = self.services.cart.park(self.cart)
+        except DomainError as hata:
+            sound.error()
+            self.banner.show_error(hata.message)
+            return
+        etiket = next(
+            (r["label"] for r in self.services.cart.parked_carts() if r["id"] == draft_id),
+            "Bekleyen sepet",
+        )
+        self.cart = self.services.cart.new_cart()
+        self._rebuild_rows()
+        self._render()
+        self._refresh_parked_count()
+        sound.success()
+        self.banner.show_success(
+            f"⏸ Sepet bekletildi: {etiket}", "Yeni müşteriye başlayabilirsiniz."
+        )
+
+    def show_parked(self) -> None:
+        if self._checkout_busy:
+            return
+        if self._parked_panel is None:
+            self._parked_panel = BekleyenlerPanel(self)
+            self._parked_panel.close_requested.connect(self.close_overlay)
+            self._parked_panel.resume_requested.connect(self._on_resume_requested)
+            self._parked_panel.swap_confirmed.connect(self._swap_with_parked)
+            self._parked_panel.delete_confirmed.connect(self._delete_parked)
+            self._parked_panel.hide()
+        self._parked_panel.set_items(self.services.cart.parked_carts())
+        self._open_overlay(KATMAN_BEKLEYENLER, self._parked_panel, block_scans=True)
+
+    def _on_resume_requested(self, draft_id: int) -> None:
+        if not self.cart.is_empty:
+            ozet = f"{self.cart.item_count} ürün · {format_tl(self.cart.total)}"
+            self._parked_panel.ask_swap(draft_id, ozet)
+            return
+        self._resume_parked(draft_id)
+
+    def _resume_parked(self, draft_id: int) -> None:
+        try:
+            yeni, sorunlar = self.services.cart.resume_parked(draft_id)
+        except DomainError as hata:
+            self._parked_panel.set_items(self.services.cart.parked_carts())
+            self.banner.show_error(hata.message)
+            return
+        if self.cart.draft_id is not None and self.cart.is_empty:
+            self.services.cart.discard_draft(self.cart.draft_id)
+        self._load_resumed(yeni, sorunlar)
+
+    def _swap_with_parked(self, draft_id: int) -> None:
+        """Eldeki sepet bekletilir, seçilen açılır (sınır aşılmaz)."""
+        eski = self.cart
+        self._autosave_timer.stop()
+        try:
+            yeni, sorunlar = self.services.cart.resume_parked(draft_id)
+        except DomainError as hata:
+            self.banner.show_error(hata.message)
+            return
+        try:
+            self.services.cart.park(eski)
+        except DomainError as hata:
+            # Geri al: seçilen sepet yeniden bekler, eldeki sepet korunur.
+            self.services.cart.save_draft(yeni, kind=TASLAK_BEKLEYEN)
+            sound.error()
+            self.banner.show_error(hata.message)
+            return
+        self._load_resumed(yeni, sorunlar)
+
+    def _load_resumed(self, yeni, sorunlar) -> None:
+        self.close_overlay()
+        self.cart = yeni
+        self._rebuild_rows()
+        self._render()
+        self._refresh_parked_count()
+        if sorunlar:
+            # Bekleyen sepet ASLA sessizce onarılmaz: satırlar işaretlidir.
+            sound.error()
+            self.banner.show_error(
+                "Bekleyen sepette değişen ürün var.",
+                "İşaretli satırları kontrol edin: güncel fiyatı uygulayın ya da "
+                "ürünü çıkarın.",
+            )
+        else:
+            sound.success()
+            self.banner.show_success("▶ Bekleyen sepet açıldı.",
+                                     f"{self.cart.item_count} ürün · "
+                                     f"{format_tl(self.cart.total)}")
+
+    def _delete_parked(self, draft_id: int) -> None:
+        self.services.cart.discard_draft(draft_id)
+        self._parked_panel.set_items(self.services.cart.parked_carts())
+        self._refresh_parked_count()
 
     # ===================== Müşteri ekranı ================================
     def _publish_display(self) -> None:

@@ -167,6 +167,16 @@ class FiyatDegisti(DomainError):
         self.sorunlar = list(sorunlar or [])
 
 
+class BekletmeSiniri(DomainError):
+    """Aynı anda bekletilebilecek sepet sayısı doldu."""
+
+    def __init__(self, sinir: int) -> None:
+        super().__init__(
+            f"En fazla {sinir} sepet bekletilebilir. Önce bekleyen bir sepeti "
+            "açın ya da silin."
+        )
+
+
 class EskiOturumSepeti(DomainError):
     """Sepet, veritabanı yeniden açılmadan (ör. yedek geri yüklenmeden) önceye ait."""
 

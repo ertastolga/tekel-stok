@@ -18,7 +18,7 @@ import sqlite3
 from app.core.clock import BEGINNING_OF_TIME, DEFAULT_BUSINESS_DAY_START_HOUR
 from app.core.tr import normalize_name
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 # =========================================================================
@@ -741,7 +741,22 @@ def _now() -> int:
     return now_utc()
 
 
-#: Her göç ya SQL metni ya da ``conn`` alan bir fonksiyondur.
+#: v2 (V1.2 M3b) — Bekleyen sepetler ve taslak satırı kopyaları. YALNIZCA
+#: ekleme: mevcut AÇIK taslaklar ``AUTOSAVE`` olur (V1.1 kurtarma anlamı).
+_V2_BEKLEYEN_SEPETLER = [
+    "ALTER TABLE cart_drafts ADD COLUMN kind TEXT NOT NULL DEFAULT 'AUTOSAVE' "
+    "CHECK (kind IN ('AUTOSAVE','PARKED'))",
+    "ALTER TABLE cart_drafts ADD COLUMN parked_at_utc INTEGER",
+    "ALTER TABLE cart_draft_lines ADD COLUMN product_name_snapshot TEXT",
+    "ALTER TABLE cart_draft_lines ADD COLUMN barcode_used TEXT",
+    "ALTER TABLE cart_draft_lines ADD COLUMN barcode_multiplier INTEGER NOT NULL "
+    "DEFAULT 1 CHECK (barcode_multiplier >= 1)",
+    "CREATE INDEX IF NOT EXISTS ix_cart_drafts_open ON cart_drafts(status, kind)",
+]
+
+#: Her göç ya SQL metni ya da ``conn`` alan bir fonksiyondur. Göçler bir kez
+#: işlendikten sonra DEĞİŞTİRİLMEZ; yalnızca yeni sürüm eklenir.
 MIGRATIONS: list[tuple[int, list]] = [
     (1, [*_V1_TABLES, *_V1_INDEXES, _v1_seed]),
+    (2, _V2_BEKLEYEN_SEPETLER),
 ]

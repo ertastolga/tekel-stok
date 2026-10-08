@@ -387,7 +387,10 @@ class MainWindow(QMainWindow):
         return self.pages.get(self._current_key or "")
 
     def _go_back(self) -> None:
-        """Esc: ana ekrana dön. Beklenmedik bir yere düşürmez."""
+        """Esc: önce açık katmanı kapatır; yoksa ana ekrana döner."""
+        sayfa = self.current_page()
+        if sayfa is not None and hasattr(sayfa, "close_overlay") and sayfa.close_overlay():
+            return
         if self._current_key != "ana_ekran":
             self.go_to("ana_ekran")
 
