@@ -34,6 +34,7 @@ SHORTCUTS: tuple[Shortcut, ...] = (
     Shortcut("F8", "Son İşlemi Geri Al", "geri_al", True),
     Shortcut("F9", "Stok Sayımı", "goto:stok_sayimi"),
     Shortcut("F10", "İşlemi Tamamla", "tamamla", True),
+    Shortcut("F11", "Fiyat Gör", "goto:fiyat_kontrol"),
     Shortcut("F12", "Barkod Testi", "goto:barkod_testi"),
     Shortcut("Esc", "Geri / Vazgeç", "geri"),
     Shortcut("Ctrl+F", "Ara", "ara"),

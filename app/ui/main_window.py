@@ -199,6 +199,7 @@ class MainWindow(QMainWindow):
         from app.ui.pages.dashboard import DashboardPage
         from app.ui.pages.history import HistoryPage
         from app.ui.pages.home import HomePage
+        from app.ui.pages.price_check import PriceCheckPage
         from app.ui.pages.products import ProductsPage
         from app.ui.pages.quick_sale import QuickSalePage
         from app.ui.pages.settings import SettingsPage
@@ -211,7 +212,7 @@ class MainWindow(QMainWindow):
         sinifler = [
             HomePage,
             # KASA — Sepetli Satış BİRİNCİL iş akışıdır; menüde de önce gelir.
-            CartSalePage, QuickSalePage,
+            CartSalePage, QuickSalePage, PriceCheckPage,
             # STOK
             StockEntryPage, StockCountPage, StockStatusPage,
             # YÖNETİM
@@ -223,6 +224,8 @@ class MainWindow(QMainWindow):
             self._build_page, {sinif.nav_key: sinif for sinif in sinifler}
         )
         self._current_key: str | None = None
+        #: Bir önceki sayfa (Fiyat Gör'ün dönüş hedefi için).
+        self.previous_key: str | None = None
         gruplar: dict[str, list] = {anahtar: [] for anahtar, _ in NAV_GROUPS}
         for sinif in sinifler:
             if sinif.nav_group in gruplar:
@@ -389,6 +392,7 @@ class MainWindow(QMainWindow):
                 log.exception("Sayfa kapatılırken hata: %s", self._current_key)
 
         self.stack.setCurrentWidget(sayfa)
+        self.previous_key = self._current_key
         self._current_key = key
         self._check_nav(key)
         self.apply_nav_visibility()
@@ -434,6 +438,8 @@ class MainWindow(QMainWindow):
         """Esc: önce açık katmanı kapatır; yoksa ana ekrana döner."""
         sayfa = self.current_page()
         if sayfa is not None and hasattr(sayfa, "close_overlay") and sayfa.close_overlay():
+            return
+        if sayfa is not None and hasattr(sayfa, "handle_back") and sayfa.handle_back():
             return
         if self._current_key != "ana_ekran":
             self.go_to("ana_ekran")

@@ -183,6 +183,10 @@ class CartSalePage(KatmanSahibi, Page):
         self.parked_button = self.toolbar.add_tool(
             "Bekleyenler (0)", self.show_parked, "Bekleyen sepetleri göster"
         )
+        self.price_check_button = self.toolbar.add_tool(
+            "🏷 Fiyat Gör", lambda: self.main_window.go_to("fiyat_kontrol"),
+            "Okutulan ürünün fiyatını göster, satış yapma (F11)",
+        )
         self.toolbar.finish()
         # "⋯" menüsü: seyrek kullanılan eylemler. Öznitelik adları V1.1 ile
         # aynıdır (``undo_button``, ``clear_button``, ``mode_button``).

@@ -93,6 +93,10 @@ class QuickSalePage(KatmanSahibi, Page):
         self.search_button = self.toolbar.add_tool(
             "🔍 Ürün Ara", self.open_search, "Barkodu okunmayan ürünü ada göre bul (Ctrl+F)"
         )
+        self.price_check_button = self.toolbar.add_tool(
+            "🏷 Fiyat Gör", lambda: self.main_window.go_to("fiyat_kontrol"),
+            "Okutulan ürünün fiyatını göster, satış yapma (F11)",
+        )
         self.mode_button = self.toolbar.add_tool(
             "🛒  Sepetli Satış", lambda: self.main_window.go_to("sepetli_satis")
         )

@@ -30,7 +30,7 @@ from app.ui.widgets.kasa import ARAC_CUBUGU_YUKSEKLIGI  # noqa: E402
 from ui_support import *  # noqa: E402,F401,F403
 
 BIRA = "8690504001492"
-KASA = ("sepetli_satis", "hizli_satis")
+KASA = ("sepetli_satis", "hizli_satis", "fiyat_kontrol")
 BOYUTLAR = [(1000, 600), (1092, 614)]
 
 

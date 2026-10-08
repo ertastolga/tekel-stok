@@ -75,3 +75,9 @@ def blocked() -> None:
     """
     _beep(380, 70)
     _beep(300, 70)
+
+
+def price_check() -> None:
+    """Fiyat Gör: satıştan AYIRT EDİLEBİLEN iki kısa tiz ses (satış yapılmadı)."""
+    _beep(1600, 30)
+    _beep(1600, 30)
