@@ -109,3 +109,48 @@ FORM_FIELD_MAX_WIDTH = 520
 #: yalnızca arayüzün gösterdiği bilgi için tutulur.
 SCAN_BURST_KEY_MS = 30
 SCAN_STALE_GAP_MS = 300
+
+
+# --- Görünüm: yazı ölçeği ve yoğunluk (V1.2 M9a) --------------------------
+#: Rahat yoğunlukta eklenen aralıklar (px). Dokunma hedefleri ASLA küçülmez:
+#: yoğunluk yalnızca BÜYÜTÜR.
+RAHAT_EKLERI: dict[str, int] = {
+    "TABLE_ROW_HEIGHT": 8,
+    "INPUT_HEIGHT": 6,
+    "BUTTON_HEIGHT": 6,
+    "CARD_PADDING": 4,
+    "CARD_SPACING": 4,
+    "PAGE_SPACING": 4,
+    "CART_ROW_HEIGHT": 8,
+}
+_TABAN: dict[str, float] = {}
+
+
+def _taban() -> dict[str, float]:
+    if not _TABAN:
+        _TABAN.update({ad: deger for ad, deger in globals().items()
+                       if ad.isupper() and (ad.startswith("FONT_") or ad.endswith("_PT")
+                                            or ad in RAHAT_EKLERI)
+                       and isinstance(deger, (int, float))})
+    return _TABAN
+
+
+def uygula(olcek: int = 100, yogunluk: str = "NORMAL") -> None:
+    """Yazı ölçeğini (%) ve yoğunluğu uygular — pencereler kurulmadan ÖNCE.
+
+    Bütün ölçüler ``metrics`` modülü üzerinden ÇAĞRI ANINDA okunduğu için
+    (bkz. test_tema.py) bu çağrı her yere yansır. Tekrar çağrılabilir: daima
+    TABAN değerlerden hesaplanır.
+    """
+    taban = _taban()
+    g = globals()
+    for ad, deger in taban.items():
+        if ad in RAHAT_EKLERI:
+            g[ad] = int(deger) + (RAHAT_EKLERI[ad] if yogunluk == "RAHAT" else 0)
+        else:
+            g[ad] = round(float(deger) * olcek / 100.0, 1)
+
+
+def sifirla() -> None:
+    """%100 ve Normal yoğunluk (testler için)."""
+    uygula(100, "NORMAL")

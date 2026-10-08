@@ -696,6 +696,11 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "nav_collapsed_groups": "VARSAYILAN",
     # Ürün Ara vb. alanlarda ekran klavyesi (klavyesiz dokunmatik kasa).
     "ekran_klavyesi": "1",
+    # Görünüm (V1.2 M9a; yeniden başlatınca uygulanır): LIGHT | DARK,
+    # yazı ölçeği 100/110/120/130, yoğunluk NORMAL | RAHAT.
+    "theme": "LIGHT",
+    "font_scale": "100",
+    "density": "NORMAL",
     "sound_enabled": "1",
     "window_geometry": "",
     "window_maximized": "0",

@@ -129,6 +129,60 @@ LIGHT = ThemeTokens(
     ),
 )
 
+#: Koyu tema (V1.2 M9a). Vurgu renkleri hem ZEMİN (üzerinde koyu yazıyla) hem
+#: koyu yüzey üzerinde YAZI olarak kullanılır; ikisinde de en az 4,5:1 kontrast
+#: sağlanır (test_gorunum.py ölçer). Renk yine tek başına anlam taşımaz.
+DARK = ThemeTokens(
+    ad="DARK",
+    bg="#11161C",
+    surface="#1A2129",
+    surface_alt="#212A34",
+    border="#3A4756",
+    text="#E7EDF3",
+    text_muted="#A3B0BD",
+    on_accent="#0B1015",
+    primary="#2E9D62",
+    primary_dark="#3DB574",
+    primary_light="#17392A",
+    primary_light_hover="#1D4734",
+    primary_pressed="#258050",
+    stock="#D08A33",
+    stock_dark="#E29D48",
+    stock_light="#3A2A14",
+    count="#9B7BEA",
+    count_dark="#B096F0",
+    count_light="#2A2142",
+    cart="#3A8CD6",
+    cart_dark="#5AA2E3",
+    cart_light="#162F45",
+    cart_pressed="#2C71AF",
+    nav_bg="#0B1015",
+    nav_text="#C8D3E0",
+    nav_active="#3A8CD6",
+    nav_group="#8A99AB",
+    nav_hover="rgba(255,255,255,0.08)",
+    danger="#EB5F57",
+    danger_light="#3D1B1B",
+    danger_border="#F07A73",
+    danger_pressed_light="#4A2222",
+    warning="#D9A030",
+    warning_light="#3A2E12",
+    critical="#E07A3A",
+    critical_light="#3B2416",
+    info="#4FA3E3",
+    info_light="#162F45",
+    disabled_bg="#252E39",
+    disabled_fg="#6B7785",
+    disabled_border="#2E3946",
+    step_hover="#273240",
+    step_pressed="#2F3B4B",
+    chart=(
+        "#4FA3E3", "#2E9D62", "#D08A33", "#9B7BEA", "#EB5F57",
+        "#2BB3A3", "#E07A3A", "#7C8BD6", "#D9A030", "#5B8DEF",
+    ),
+)
+TEMALAR: dict[str, ThemeTokens] = {"LIGHT": LIGHT, "DARK": DARK}
+
 #: Etkin tema. Açılışta (pencereler kurulmadan ÖNCE) ``set_tokens`` ile seçilir.
 _aktif: ThemeTokens = LIGHT
 
@@ -191,6 +245,12 @@ def set_tokens(tokens: ThemeTokens) -> None:
 def tokens() -> ThemeTokens:
     """Etkin tema jetonları."""
     return _aktif
+
+
+def gorunumu_uygula(tema: str = "LIGHT", olcek: int = 100, yogunluk: str = "NORMAL") -> None:
+    """Tema + yazı ölçeği + yoğunluk — açılışta, pencerelerden ÖNCE (M9a)."""
+    metrics.uygula(olcek, yogunluk)
+    set_tokens(TEMALAR.get(tema, LIGHT))
 
 
 set_tokens(LIGHT)

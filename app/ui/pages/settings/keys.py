@@ -35,6 +35,9 @@ AYAR_BOLUMU: dict[str, str] = {
     "smart_grouping_enabled": "kasa",
     # Görünüm
     "ekran_klavyesi": "gorunum",
+    "theme": "gorunum",
+    "font_scale": "gorunum",
+    "density": "gorunum",
     # Ses
     "sound_enabled": "ses",
     # Barkod Okuyucu

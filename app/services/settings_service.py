@@ -119,6 +119,13 @@ class SettingsService:
         """NAKİT'e dokununca Para Üstü paneli açılsın mı (varsayılan: hayır)?"""
         return self.get_bool("cash_change_calculator", False)
 
+    def gorunum(self):
+        """Kayıtlı görünüm (tema, yazı ölçeği, yoğunluk); bozuk değer → varsayılan."""
+        from app.core.gorunum import dogrula
+
+        return dogrula(self.get("theme", "LIGHT"), self.get("font_scale", "100"),
+                       self.get("density", "NORMAL"))
+
     def ekran_klavyesi(self) -> bool:
         """Kasa arama alanlarında ekran klavyesi mi, fiziksel klavye mi?"""
         return self.get_bool("ekran_klavyesi", True)

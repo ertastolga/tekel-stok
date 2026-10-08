@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
 from app.core import schema as schema_mod
 from app.core.clock import shift_days
 from app.core.errors import DomainError
+from app.core import gorunum as gorunum_mod
 from app.core.pricing_math import YUVARLAMA_ADIMLARI
 from app.core.tr import fmt_datetime
 from app.services.security_service import ProtectedAction
@@ -373,8 +374,64 @@ class SettingsPage(Page):
             "bir barkod yazdığınız metni bozmaz."
         ))
         duzen.addWidget(kutu)
+
+        gorunus = QGroupBox("Tema ve yazı boyutu")
+        g = QVBoxLayout(gorunus)
+        self.theme_combo = QComboBox()
+        for kimlik, ad in gorunum_mod.TEMALAR.items():
+            self.theme_combo.addItem(ad, kimlik)
+        self.font_scale_combo = QComboBox()
+        for olcek in gorunum_mod.OLCEKLER:
+            self.font_scale_combo.addItem(f"%{olcek}", olcek)
+        self.density_combo = QComboBox()
+        for kimlik, ad in gorunum_mod.YOGUNLUKLAR.items():
+            self.density_combo.addItem(ad, kimlik)
+        for anahtar, kutu_, adi, alan in (
+            ("theme", self.theme_combo, "Tema", "tema"),
+            ("font_scale", self.font_scale_combo, "Yazı boyutu", "olcek"),
+            ("density", self.density_combo, "Yoğunluk", "yogunluk"),
+        ):
+            self._kayit(anahtar, kutu_, lambda k_=kutu_, a=alan: self._combo_yukle(
+                k_, getattr(self.services.settings.gorunum(), a)))
+            kutu_.currentIndexChanged.connect(lambda _i: self._gorunum_degisti())
+            g.addLayout(self._satir(adi, kutu_))
+        self.appearance_warning = self._hint("")
+        g.addWidget(self.appearance_warning)
+        self.appearance_button = QPushButton("Kaydet ve yeniden başlat")
+        self.appearance_button.setObjectName("primary")
+        self.appearance_button.clicked.connect(self.save_appearance_and_restart)
+        g.addWidget(self.appearance_button)
+        g.addWidget(self._hint(
+            "Tema, yazı boyutu ve yoğunluk uygulama yeniden başlayınca geçerli olur. "
+            "Açık sepet ve bekleyen sepetler kaybolmaz."
+        ))
+        duzen.addWidget(gorunus)
         duzen.addStretch(1)
         return icerik
+
+    def appearance_choice(self) -> tuple[str, int, str]:
+        return (self.theme_combo.currentData(), self.font_scale_combo.currentData(),
+                self.density_combo.currentData())
+
+    def _gorunum_degisti(self) -> None:
+        if self._loading:
+            return
+        kayitli = self.services.settings.gorunum()
+        secim = self.appearance_choice()
+        self.appearance_button.setEnabled(
+            secim != (kayitli.tema, kayitli.olcek, kayitli.yogunluk))
+        self.appearance_warning.setText(
+            "Bu yazı boyutu 1366×768 ve daha büyük ekranlar içindir; 1000×600 ekranda "
+            "bazı sayfalar sığmayabilir." if secim[1] > 100 else "")
+        self.appearance_warning.setVisible(secim[1] > 100)
+
+    def save_appearance_and_restart(self) -> None:
+        tema, olcek, yogunluk = self.appearance_choice()
+        self.services.settings.set("theme", tema)
+        self.services.settings.set("font_scale", olcek)
+        self.services.settings.set("density", yogunluk)
+        self.appearance_button.setEnabled(False)
+        self.main_window.request_restart()
 
     # ===================== Ses ===========================================
     def _build_ses(self) -> QWidget:
@@ -630,6 +687,7 @@ class SettingsPage(Page):
             self._guvenlik_tazele()
         finally:
             self._loading = False
+        self._gorunum_degisti()
 
     def _save_mode(self) -> None:
         if self._loading:

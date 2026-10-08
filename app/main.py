@@ -2,7 +2,8 @@
 
 Açılış sırası bilinçlidir:
   1. Yüksek DPI politikası — ``QApplication``'dan ÖNCE olmak ZORUNDA
-  2. QApplication + tema
+  2. QApplication + tema (görünüm ayarları veritabanına SALT OKUNUR bakışla,
+     göçten ve pencerelerden ÖNCE okunur; okunamazsa Açık / %100 / Normal)
   3. Log ve hata yakalayıcı
   4. Tek örnek koruması
   5. Veritabanı (göçler burada uygulanır)
@@ -164,6 +165,10 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationName(config.APP_NAME)
     app.setApplicationDisplayName(config.APP_NAME)
     app.setOrganizationName(config.APP_DIR_NAME)
+    from app.core import gorunum
+
+    secim = gorunum.oku(config.db_path())
+    theme.gorunumu_uygula(secim.tema, secim.olcek, secim.yogunluk)
     theme.apply_theme(app)
 
     setup_logging()
