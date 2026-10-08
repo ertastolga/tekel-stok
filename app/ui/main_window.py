@@ -205,6 +205,7 @@ class MainWindow(QMainWindow):
     def _build_pages(self) -> None:
         from app.ui.pages.barcode_test import BarcodeTestPage
         from app.ui.pages.cart_sale import CartSalePage
+        from app.ui.pages.categories import CategoriesPage
         from app.ui.pages.dashboard import DashboardPage
         from app.ui.pages.history import HistoryPage
         from app.ui.pages.home import HomePage
@@ -225,7 +226,7 @@ class MainWindow(QMainWindow):
             # STOK
             StockEntryPage, StockCountPage, StockStatusPage,
             # YÖNETİM
-            DashboardPage, ProductsPage, SuppliersPage, HistoryPage,
+            DashboardPage, ProductsPage, CategoriesPage, SuppliersPage, HistoryPage,
             SettingsPage, BarcodeTestPage,
         ]
 

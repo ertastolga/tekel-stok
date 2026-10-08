@@ -64,7 +64,7 @@ def run_self_test(report_path: str | None = None) -> int:
         kontrol("Sema surumu", services.db.schema_version() >= 1)
         kontrol(
             "Baslangic kategorileri",
-            services.db.scalar("SELECT COUNT(*) FROM categories") == 20,
+            services.db.scalar("SELECT COUNT(*) FROM categories") == 34,
         )
         kontrol(
             "Baslangic konumlari",

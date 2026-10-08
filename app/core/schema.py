@@ -612,13 +612,21 @@ _V1_INDEXES = [
 
 # --- Başlangıç verisi ------------------------------------------------------
 #: Kategori ağacı: (üst kategori, [alt kategoriler])
-DEFAULT_CATEGORIES: list[tuple[str, list[str]]] = [
-    ("Alkollü İçecekler", ["Bira", "Rakı", "Viski", "Votka", "Şarap"]),
-    ("İçecekler", ["Kola", "Gazoz", "Su", "Enerji İçeceği", "Meyve Suyu"]),
-    ("Atıştırmalık", ["Cips", "Kuruyemiş", "Çikolata", "Bisküvi"]),
-    ("Tütün", ["Sigara"]),
-    ("Diğer", []),
+#: Kategori şablonu (plan §6.1): 5 üst + 29 alt = 34 kategori. YENİ kurulumlar
+#: bununla başlar. Mevcut kurulumlar kendiliğinden DEĞİŞMEZ; Kategoriler
+#: ekranındaki "Şablondan eksikleri ekle" önizlemeyle uygular.
+#: (V1.0/V1.1 kurulumları 20 kategorilik eski ağaçla başlamıştı.)
+KATEGORI_SABLONU: list[tuple[str, list[str]]] = [
+    ("Alkollü İçecekler", ["Bira", "Rakı", "Viski", "Votka", "Şarap", "Cin", "Tekila",
+                           "Likör"]),
+    ("Tütün", ["Sigara", "Puro / Sigarillo", "Tütün", "Tütün Aksesuarı"]),
+    ("Soğuk İçecek", ["Kola", "Gazoz", "Enerji İçeceği", "Meyve Suyu", "Su", "Soda"]),
+    ("Atıştırmalık", ["Cips", "Kuruyemiş", "Çikolata", "Bisküvi", "Kraker", "Şekerleme",
+                      "Sakız"]),
+    ("Diğer", ["Çakmak", "Pil", "Buz", "Diğer"]),
 ]
+#: Yeni kurulum tohumu (v1 göçünün veri adımı) şablonu kullanır.
+DEFAULT_CATEGORIES = KATEGORI_SABLONU
 
 #: (ad, tür, soğutmalı mı)
 DEFAULT_LOCATIONS: list[tuple[str, str, int]] = [

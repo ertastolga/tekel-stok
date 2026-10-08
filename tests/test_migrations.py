@@ -26,7 +26,7 @@ def test_bos_dosyada_tum_gocler_uygulanir(db_file):
     db = Database(db_file).connect()
     try:
         assert db.schema_version() == SCHEMA_VERSION
-        assert db.scalar("SELECT COUNT(*) FROM categories") == 20
+        assert db.scalar("SELECT COUNT(*) FROM categories") == 34   # §6.1 şablonu
     finally:
         db.close()
 

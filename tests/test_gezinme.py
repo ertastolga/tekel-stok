@@ -27,7 +27,8 @@ from ui_support import *  # noqa: E402,F401,F403
 BEKLENEN = {
     "kasa": ["sepetli_satis", "hizli_satis", "fiyat_kontrol"],
     "stok": ["stok_girisi", "stok_sayimi", "stok_durumu"],
-    "yonetim": ["panel", "urunler", "tedarikciler", "gecmis", "ayarlar", "barkod_testi"],
+    "yonetim": ["panel", "urunler", "kategoriler", "tedarikciler", "gecmis", "ayarlar",
+                "barkod_testi"],
 }
 
 
@@ -173,7 +174,7 @@ def test_sayfalar_ilk_gosterildiklerinde_kurulur(qapp, services, bira):
     win = MainWindow(services)
     try:
         assert set(win.pages.hazir()) == {"sepetli_satis"}
-        assert "ayarlar" in win.pages and len(win.pages) == 13
+        assert "ayarlar" in win.pages and len(win.pages) == 14
         win.apply_settings()
         assert set(win.pages.hazir()) == {"sepetli_satis"}
         win.go_to("hizli_satis")

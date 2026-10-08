@@ -44,8 +44,8 @@ def test_goc_ikinci_kez_calismaz(db):
 
 
 def test_baslangic_verisi_yuklendi(db):
-    # 5 üst kategori + 15 alt kategori
-    assert db.scalar("SELECT COUNT(*) FROM categories") == 20
+    # V1.2 şablonu (plan §6.1): 5 üst kategori + 29 alt kategori (V1.1: 5 + 15)
+    assert db.scalar("SELECT COUNT(*) FROM categories") == 34
     assert db.scalar("SELECT COUNT(*) FROM categories WHERE parent_id IS NULL") == 5
     assert db.scalar("SELECT COUNT(*) FROM locations") == 8
     assert db.scalar("SELECT COUNT(*) FROM business_day_rules") == 1

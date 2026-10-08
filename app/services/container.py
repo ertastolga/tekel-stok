@@ -18,6 +18,7 @@ from app.services.backup_service import BackupService
 from app.services.barcode_service import BarcodeService
 from app.services.cart_service import CartService
 from app.services.catalog_service import CatalogService
+from app.services.category_service import CategoryService
 from app.services.count_service import CountService
 from app.services.inventory_service import InventoryService
 from app.services.product_service import ProductService
@@ -35,6 +36,7 @@ class Services:
     settings: SettingsService
     audit: AuditService
     catalog: CatalogService
+    categories: CategoryService
     barcodes: BarcodeService
     inventory: InventoryService
     products: ProductService
@@ -61,6 +63,7 @@ def build_services(db: Database) -> Services:
     settings = SettingsService(db)
     audit = AuditService(db)
     catalog = CatalogService(db)
+    categories = CategoryService(db, audit)
     barcodes = BarcodeService(db, settings)
     inventory = InventoryService(db, settings)
     products = ProductService(db, settings, catalog, barcodes, inventory, audit)
@@ -81,6 +84,7 @@ def build_services(db: Database) -> Services:
         settings=settings,
         audit=audit,
         catalog=catalog,
+        categories=categories,
         barcodes=barcodes,
         inventory=inventory,
         products=products,
