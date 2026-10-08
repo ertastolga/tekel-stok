@@ -30,6 +30,10 @@ class ScanEvent:
     key_count: int = 0
     avg_gap_ms: float = 0.0
     source: str = "SCANNER"
+    #: En uzun tuş arası (ms) ve sonlandırıcı: "ENTER", "TAB" ya da "YOK"
+    #: (sonlandırıcısız okuyucu, bekleme süresiyle yakalandı) — Barkod Testi.
+    max_gap_ms: float = 0.0
+    terminator: str = ""
     scan_id: int = field(default_factory=_next_id)
 
     @property

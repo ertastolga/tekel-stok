@@ -49,6 +49,8 @@ AYAR_BOLUMU: dict[str, str] = {
     "duplicate_scan_ms": "barkod",
     "barcode_trim_prefix": "barkod",
     "barcode_trim_suffix": "barkod",
+    "scanner_burst_key_ms": "barkod",
+    "scanner_min_length": "barkod",
     # İşletme (gün başlangıcı kuralı ayrı tabloda tutulur)
     "prices_include_vat": "isletme",
     "default_vat_rate": "isletme",

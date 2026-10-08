@@ -21,6 +21,20 @@ değildir: kardeş uygulamanın Barkod Testi ekranından toplanan gerçek
 Metin alanına yazan bir insanın tuşları normal akışına devam eder; yalnızca
 makine hızındaki bir dizi + sonlandırıcı yakalanır. Ayrıca elle yazım
 gereken alanlar ``scannerExempt`` özelliğiyle tamamen muaf tutulabilir.
+
+V1.2 (M9c)
+----------
+* Saat ``time.perf_counter``'dır (D-22): Windows'ta ``time.monotonic`` ~15,6 ms
+  adımlarla ilerler ve 30 ms'lik eşik bu çözünürlükte güvenilmez ölçülür.
+* Sonlandırıcı Enter YA DA Tab'dır. Makine hızındaki dizinin sonundaki
+  sonlandırıcı YUTULUR. (V1.1'de Tab yutulmuyordu: odaktaki barkod alanı Tab
+  ile gönderirken servis de dizi beklemesiyle yayınlıyordu — okutma İKİ KEZ
+  işleniyordu.)
+* Okutma yayınlanınca okuyucunun odaktaki metin alanına yazdığı karakterler
+  geri silinir. (V1.1'de Enter yutulduğu için barkod alanında kalıyor, arka
+  arkaya okutmalar alanda birleşiyordu.)
+* Eşikler (tuş arası, en kısa uzunluk) Ayarlar › Barkod Okuyucu'dan
+  güvenli sınırlar içinde değiştirilebilir.
 """
 from __future__ import annotations
 
@@ -51,8 +65,17 @@ IDLE_FLUSH_MS = 400
 #: Bu uzunluğun altındaki diziler sonlandırıcısız kabul EDİLMEZ.
 MIN_AUTO_FLUSH_LENGTH = 6
 
+#: Ayarlanabilir eşiklerin güvenli sınırları.
+BURST_KEY_MS_SINIR = (15, 60)
+MIN_LENGTH_SINIR = (4, 14)
+
 #: Elle yazım yapılan alanlar bu özellikle tamamen muaf tutulur.
 EXEMPT_PROPERTY = "scannerExempt"
+
+_SONLANDIRICILAR = {
+    Qt.Key.Key_Return: "ENTER", Qt.Key.Key_Enter: "ENTER",
+    Qt.Key.Key_Tab: "TAB", Qt.Key.Key_Backtab: "TAB",
+}
 
 _TEXT_WIDGETS = (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox)
 
@@ -62,9 +85,11 @@ class ScannerService(QObject):
 
     scanned = Signal(object)          # ScanEvent
 
-    def __init__(self, parent: QObject | None = None, clock=time.monotonic) -> None:
+    def __init__(self, parent: QObject | None = None, clock=time.perf_counter) -> None:
         super().__init__(parent)
         self._clock = clock
+        self.burst_key_ms: float = BURST_KEY_MS
+        self.min_length: int = MIN_AUTO_FLUSH_LENGTH
         self._buffer: list[str] = []
         self._first_ms: float | None = None
         self._last_ms: float | None = None
@@ -75,6 +100,17 @@ class ScannerService(QObject):
         self._idle.setSingleShot(True)
         self._idle.setInterval(IDLE_FLUSH_MS)
         self._idle.timeout.connect(self._flush_idle)
+
+    # ===================== Ayarlar =======================================
+    def set_burst_key_ms(self, ms: float) -> None:
+        """Okuyucu sayılan en yüksek ortalama tuş arası (15–60 ms)."""
+        alt, ust = BURST_KEY_MS_SINIR
+        self.burst_key_ms = float(min(ust, max(alt, ms)))
+
+    def set_min_length(self, uzunluk: int) -> None:
+        """Sonlandırıcısız okutmada kabul edilen en kısa uzunluk (4–14)."""
+        alt, ust = MIN_LENGTH_SINIR
+        self.min_length = int(min(ust, max(alt, uzunluk)))
 
     # ===================== Yaşam döngüsü =================================
     def start(self) -> None:
@@ -96,11 +132,12 @@ class ScannerService(QObject):
             return False
 
         key = event.key()
-        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+        if key in _SONLANDIRICILAR:
             # Sonlandırıcı: elimizde makine hızında bir dizi varsa bu bir
-            # okutmadır ve Enter'ın odaktaki düğmeyi tetiklemesini ENGELLERİZ.
+            # okutmadır; Enter'ın odaktaki düğmeyi tetiklemesini ve Tab'ın
+            # barkod alanını göndermesini ENGELLERİZ (çift işleme olmaz).
             if self._is_machine_burst():
-                self._emit()
+                self._emit(_SONLANDIRICILAR[key])
                 return True
             self._reset()
             return False
@@ -162,7 +199,7 @@ class ScannerService(QObject):
     def _is_machine_burst(self) -> bool:
         if len(self._buffer) < 2:
             return False
-        return self._avg_gap() < BURST_KEY_MS
+        return self._avg_gap() < self.burst_key_ms
 
     def _avg_gap(self) -> float:
         if not self._gaps:
@@ -175,22 +212,34 @@ class ScannerService(QObject):
         Yalnızca yeterince uzun VE makine hızındaki diziler yayınlanır; aksi
         hâlde insanın yazdığı birkaç harf yanlışlıkla barkod sanılırdı.
         """
-        if len(self._buffer) >= MIN_AUTO_FLUSH_LENGTH and self._is_machine_burst():
-            self._emit()
+        if len(self._buffer) >= self.min_length and self._is_machine_burst():
+            self._emit("YOK")
         else:
             self._reset()
 
-    def _emit(self) -> None:
+    def _emit(self, sonlandirici: str = "") -> None:
         code = "".join(self._buffer)
         event = ScanEvent(
             code=code,
             at_ms=self._last_ms or self._now_ms(),
             key_count=len(self._buffer),
             avg_gap_ms=0.0 if self._avg_gap() == float("inf") else self._avg_gap(),
+            max_gap_ms=max(self._gaps, default=0.0),
+            terminator=sonlandirici,
         )
         self._reset()
         if code.strip():
+            self._odaktan_sil(code)
             self.scanned.emit(event)
+
+    @staticmethod
+    def _odaktan_sil(code: str) -> None:
+        """Okuyucunun odaktaki metin alanına yazdığı diziyi geri siler."""
+        alan = QApplication.focusWidget()
+        if isinstance(alan, QLineEdit) and not alan.property(EXEMPT_PROPERTY):
+            metin = alan.text()
+            if metin.endswith(code):
+                alan.setText(metin[: len(metin) - len(code)])
 
     def _reset(self) -> None:
         self._buffer.clear()
@@ -216,6 +265,6 @@ class ScannerService(QObject):
                 self._clock.advance(interval_ms)
         if terminate:
             if self._is_machine_burst() or len(text) == 1:
-                self._emit()
+                self._emit("ENTER")
             else:
                 self._reset()

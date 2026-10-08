@@ -6,6 +6,11 @@ gönderdiği ham veriyi ve zamanlamasını gösterir.
 Bir okuyucu beklenmedik davrandığında (baştan karakter ekliyor, sonuna Tab
 gönderiyor, aynı okutmayı iki kez yolluyor) sorunu burada görüp Ayarlar'dan
 düzeltmek mümkündür.
+
+V1.2 (M9c): her okutma için yönlendirme sonucu (işlendi / engellendi / çift
+okuma…), tuş sayısı, ortalama ve en uzun tuş arası, sonlandırıcı (Enter, Tab ya
+da yok), ön/son ek kırpmasının etkisi ve GTIN değerlendirmesi gösterilir.
+Başka bir ekrandayken engellenen ya da çift sayılan okutmalar da listelenir.
 """
 from __future__ import annotations
 
@@ -31,6 +36,11 @@ from app.ui.widgets.common import (
     setup_table,
     stretch_column,
 )
+
+SUTUNLAR = ["Okunan Değer", "Tuş", "Tuş arası (ort. / en uzun)", "Sonlandırıcı",
+            "Yönlendirme", "Değerlendirme", "Ürün"]
+SONLANDIRICI_ADLARI = {"ENTER": "Enter", "TAB": "Tab", "YOK": "yok (bekleme ile)",
+                       "": "elle"}
 
 SONUC_ETIKETLERI = {
     ScanOutcome.HANDLED: "İşlendi",
@@ -78,11 +88,8 @@ class BarcodeTestPage(Page):
         )
         duzen.addWidget(self.banner)
 
-        self.table = QTableWidget(0, 5)
-        setup_table(
-            self.table,
-            ["Okunan Değer", "Uzunluk", "Hız", "Değerlendirme", "Ürün"],
-        )
+        self.table = QTableWidget(0, len(SUTUNLAR))
+        setup_table(self.table, SUTUNLAR)
         stretch_column(self.table, "Değerlendirme")
         duzen.addWidget(self.table, 1)
 
@@ -115,7 +122,8 @@ class BarcodeTestPage(Page):
     def _manual(self, text: str) -> None:
         from app.scanner.scan_event import ScanEvent
 
-        self._record(ScanEvent(code=text, key_count=len(text), avg_gap_ms=200.0))
+        self._record(ScanEvent(code=text, key_count=len(text), avg_gap_ms=200.0,
+                               source="ELLE"))
 
     def _record(self, event) -> None:
         self._events.insert(0, event)
@@ -141,20 +149,47 @@ class BarcodeTestPage(Page):
         self._render()
 
     # ===================== Çizim =========================================
+    def rows(self) -> list[tuple]:
+        """(olay, yönlendirme etiketi) — bu ekranın işledikleri + başka ekranlarda
+        engellenen / çift sayılan / işleyeni olmayan okutmalar (yeniden eskiye)."""
+        benim = {olay.scan_id for olay in self._events}
+        satirlar = [(olay, "Bu ekranda işlendi" if olay.source != "ELLE" else "Elle yazıldı")
+                    for olay in self._events]
+        for olay, sonuc in self.main_window.router.diagnostics(50):
+            if olay.scan_id not in benim and sonuc != ScanOutcome.HANDLED:
+                satirlar.append((olay, SONUC_ETIKETLERI.get(sonuc, sonuc.value)))
+        satirlar.sort(key=lambda s: -s[0].scan_id)
+        return satirlar[:50]
+
+    def _degerlendirme(self, kod: str) -> str:
+        """Kırpma etkisi + GTIN açıklaması."""
+        ham = bt.clean(kod)
+        try:
+            normal = self.services.barcodes.normalize(kod)
+        except Exception:
+            normal = ham
+        kirpma = f"kırpıldı: {ham} → {normal} · " if normal != ham else ""
+        return kirpma + bt.describe(normal)
+
     def _render(self) -> None:
-        self.table.setRowCount(len(self._events))
+        satirlar = self.rows()
+        self.table.setRowCount(len(satirlar))
         en_hizli = None
-        for satir, olay in enumerate(self._events):
+        for satir, (olay, yonlendirme) in enumerate(satirlar):
             eslesme = self.services.barcodes.resolve(olay.code)
-            hiz = f"{olay.avg_gap_ms:.0f} ms/tuş" if olay.key_count > 1 else "-"
-            if olay.key_count > 1 and (en_hizli is None or olay.avg_gap_ms < en_hizli):
+            hiz = (f"{olay.avg_gap_ms:.0f} / {olay.max_gap_ms:.0f} ms"
+                   if olay.key_count > 1 and olay.source != "ELLE" else "-")
+            if olay.key_count > 1 and olay.source != "ELLE" and (
+                    en_hizli is None or olay.avg_gap_ms < en_hizli):
                 en_hizli = olay.avg_gap_ms
 
             hucreler = (
                 QTableWidgetItem(olay.code),
-                QTableWidgetItem(str(len(olay.code))),
+                QTableWidgetItem(str(olay.key_count or len(olay.code))),
                 QTableWidgetItem(hiz),
-                QTableWidgetItem(bt.describe(olay.code)),
+                QTableWidgetItem(SONLANDIRICI_ADLARI.get(olay.terminator, olay.terminator)),
+                QTableWidgetItem(yonlendirme),
+                QTableWidgetItem(self._degerlendirme(olay.code)),
                 QTableWidgetItem(eslesme.product_name if eslesme else "tanınmadı"),
             )
             for sutun, hucre in enumerate(hucreler):

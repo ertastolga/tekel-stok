@@ -567,6 +567,9 @@ class MainWindow(QMainWindow):
         acik, seviye, turler = self.services.settings.ses_ayarlari()
         sound.yapilandir(acik, seviye, turler, config.data_dir() / "sounds")
         self.scan_guard.set_window(self.services.settings.duplicate_scan_ms())
+        self.scanner.set_burst_key_ms(
+            self.services.settings.get_int("scanner_burst_key_ms", 30))
+        self.scanner.set_min_length(self.services.settings.get_int("scanner_min_length", 6))
         self.apply_nav_visibility()
         self._update_footer()
         for sayfa in self.pages.hazir().values():

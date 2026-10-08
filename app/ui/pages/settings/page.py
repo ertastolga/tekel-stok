@@ -500,6 +500,19 @@ class SettingsPage(Page):
             "Yalnızca okuyucunuz barkoda fazladan karakter ekliyorsa doldurun; "
             "bu karakterler okutulan koddan silinir."
         ))
+        self.burst_spin = self._spin("scanner_burst_key_ms", 15, 60, 1, " ms")
+        ileri.addLayout(self._satir(
+            "Tuş başına en fazla süre (bu kadar hızlı yazılan okutmadır)", self.burst_spin,
+            self._varsayilan_dugmesi("scanner_burst_key_ms", self.burst_spin)))
+        self.min_length_spin = self._spin("scanner_min_length", 4, 14, 1, " karakter")
+        ileri.addLayout(self._satir(
+            "Sonlandırıcı göndermeyen okuyucuda en kısa barkod", self.min_length_spin,
+            self._varsayilan_dugmesi("scanner_min_length", self.min_length_spin)))
+        ileri.addWidget(self._hint(
+            "Varsayılanlar çoğu okuyucuda doğrudur. Barkod Testi ekranında okuyucunuzun "
+            "tuş arası ve sonlandırıcısı görünür; yalnızca orada sorun görürseniz "
+            "değiştirin."
+        ))
         duzen.addStretch(1)
         return icerik
 
