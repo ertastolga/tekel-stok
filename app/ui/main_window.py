@@ -213,6 +213,7 @@ class MainWindow(QMainWindow):
         from app.ui.pages.prices import PricesPage
         from app.ui.pages.products import ProductsPage
         from app.ui.pages.quick_sale import QuickSalePage
+        from app.ui.pages.quick_stock import QuickStockPage
         from app.ui.pages.settings import SettingsPage
         from app.ui.pages.stock_count import StockCountPage
         from app.ui.pages.stock_entry import StockEntryPage
@@ -225,7 +226,7 @@ class MainWindow(QMainWindow):
             # KASA — Sepetli Satış BİRİNCİL iş akışıdır; menüde de önce gelir.
             CartSalePage, QuickSalePage, PriceCheckPage,
             # STOK
-            StockEntryPage, StockCountPage, StockStatusPage,
+            QuickStockPage, StockEntryPage, StockCountPage, StockStatusPage,
             # YÖNETİM
             DashboardPage, ProductsPage, CategoriesPage, PricesPage, SuppliersPage,
             HistoryPage, SettingsPage, BarcodeTestPage,

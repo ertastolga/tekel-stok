@@ -42,6 +42,7 @@ from app.core.db import Database
 from app.core.errors import (
     BosFis,
     GecersizFiyat,
+    GecersizMiktar,
     FisBulunamadi,
     FisGeriAlinamaz,
     FisZatenTamamlanmis,
@@ -51,6 +52,9 @@ from app.core.models import MovementType, RefType, ReversalPreview
 from app.core.money import format_tl
 
 log = logging.getLogger(__name__)
+
+#: Hızlı Stok Girişi fişlerinin notu (listede bugünkü girişleri bulmak için).
+HIZLI_STOK_NOTU = "Hızlı Stok Girişi"
 
 
 class PurchaseService:
@@ -340,6 +344,47 @@ class PurchaseService:
                 "receipt", receipt_id, conn=conn,
             )
             return receipt_id
+
+    # ===================== Hızlı Stok Girişi (D1) =======================
+    def quick_receive(
+        self,
+        product_id: int,
+        quantity: int,
+        unit_cost: int | None,
+        barcode_used: str | None = None,
+        multiplier: int = 1,
+    ) -> int:
+        """Okut → adet → Kaydet: tek satırlık, tedarikçisiz fiş, TEK işlemde.
+
+        ``quantity`` temel birimdedir (koli × çarpan çağıranca uygulanır).
+        ``unit_cost=None`` maliyet bilinmiyor demektir (tahmini kural).
+        Yarım kalan taslak oluşmaz: hata olursa hiçbir şey yazılmaz.
+        """
+        if int(quantity) <= 0:
+            raise GecersizMiktar()
+        with self.db.transaction():
+            fis = self.start_draft(note=HIZLI_STOK_NOTU)
+            self.add_line(fis, product_id, int(quantity), unit_cost, barcode_used, multiplier)
+            self.commit(fis)
+        return fis
+
+    def quick_entries(self, business_date: str | None = None,
+                      limit: int = 50) -> list[sqlite3.Row]:
+        """Bir günün Hızlı Stok girişleri (yeniden eskiye), geri alınıp alınmadığıyla."""
+        gun = business_date or self.settings.calendar().today()
+        return self.db.query(
+            "SELECT r.id, r.committed_at_utc, l.product_id, p.name, l.quantity, "
+            "       l.unit_cost, l.cost_is_estimated, l.barcode_multiplier, "
+            "       EXISTS (SELECT 1 FROM purchase_receipts x "
+            "                WHERE x.reverses_receipt_id = r.id) AS geri_alindi "
+            "  FROM purchase_receipts r "
+            "  JOIN purchase_receipt_lines l ON l.receipt_id = r.id "
+            "  JOIN products p ON p.id = l.product_id "
+            " WHERE r.status = 'COMMITTED' AND r.reverses_receipt_id IS NULL "
+            "   AND r.note = ? AND r.receipt_date = ? "
+            " ORDER BY r.id DESC LIMIT ?",
+            (HIZLI_STOK_NOTU, gun, max(1, min(500, limit))),
+        )
 
     # ===================== Geri alma =====================================
     def reversal_preview(self, receipt_id: int) -> ReversalPreview:
