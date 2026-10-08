@@ -38,6 +38,7 @@ QT_SUZ = [
     "app/scanner/scan_event.py",
     "app/tools/veri_guvenligi.py",
     "app/tools/perf_dataset.py",
+    "app/importers",
 ]
 
 #: Kasa sayfaları: iç içe olay döngüsü kullanmaz (kaplamalar sinyalle çalışır).
