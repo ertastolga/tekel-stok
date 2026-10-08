@@ -324,6 +324,19 @@ QPushButton#navGroupHeader {{
 QPushButton#kasaMore {{
     min-height: {max(metrics.TOUCH_TARGET_MIN - 20, text_height(metrics.FONT_CART_QTY_PT))}px;
 }}
+/* Tek satırlık giriş: yazının üstünde ve altında 1'er px iç boşluk vardır
+   (doğal yükseklik = satır + 2). En küçük de buna eşit olmalı: aynı satırda
+   sabit yükseklikli bir onay kutusu varsa kutu alanı EN KÜÇÜĞE indirir
+   (Kategoriler'deki "Kategori ara…"). */
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit {{
+    min-height: {max(metrics.INPUT_HEIGHT - 20, text_height(metrics.FONT_BASE_PT) + 2)}px;
+}}
+#touchDisplay {{
+    min-height: {max(metrics.TOUCH_TARGET_MIN - 16, text_height(metrics.FONT_BARCODE_PT))}px;
+}}
+#touchDisplay[buyuk="evet"] {{
+    min-height: {max(metrics.TOUCH_TARGET_MIN - 16, text_height(metrics.FONT_TOUCH_QTY_PT))}px;
+}}
 """
 
 

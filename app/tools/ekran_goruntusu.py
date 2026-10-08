@@ -472,8 +472,9 @@ def _dosya_adi(metin: str) -> str:
     return "".join(c for c in metin.translate(tablo).lower() if c.isalnum() or c == "_")
 
 
-def kirpilan_dugmeler(kok) -> list[tuple[str, int, int]]:
-    """Görünür düğmelerden yazısı DİKEYDE kırpılanlar: (metin, gerek, mevcut).
+def kirpilan_yazilar(kok) -> list[tuple[str, int, int]]:
+    """Görünür düğme, etiket ve giriş alanlarından yazısı DİKEYDE kırpılanlar:
+    (metin, gerek, mevcut).
 
     Stil sayfasındaki ``min-height`` gerecin açık en küçük yüksekliği olur;
     yer daralınca (ör. kaydırılan menü) yerleşim düğmeyi doğal yüksekliğinin
@@ -482,7 +483,10 @@ def kirpilan_dugmeler(kok) -> list[tuple[str, int, int]]:
     "Avarlar", "Gecmis" okunuyordu).
     """
     from PySide6.QtGui import QFontMetrics
-    from PySide6.QtWidgets import QPushButton, QStyle, QStyleOptionButton
+    from PySide6.QtWidgets import (
+        QAbstractSpinBox, QComboBox, QLabel, QLineEdit, QPushButton, QStyle,
+        QStyleOptionButton,
+    )
 
     sonuc = []
     for dugme in kok.findChildren(QPushButton):
@@ -495,6 +499,26 @@ def kirpilan_dugmeler(kok) -> list[tuple[str, int, int]]:
         satir = QFontMetrics(dugme.font()).height()
         if icerik.height() < satir:
             sonuc.append((dugme.text().strip(), satir, icerik.height()))
+    for etiket in kok.findChildren(QLabel):
+        if not etiket.isVisible() or not etiket.text().strip():
+            continue
+        if etiket.pixmap() is not None and not etiket.pixmap().isNull():
+            continue
+        gerek = (etiket.heightForWidth(etiket.width()) if etiket.wordWrap()
+                 else QFontMetrics(etiket.font()).height())
+        mevcut = etiket.contentsRect().height()
+        if gerek > 0 and mevcut + 1 < gerek:
+            sonuc.append((etiket.text().strip()[:40], gerek, mevcut))
+    for alan in (kok.findChildren(QLineEdit) + kok.findChildren(QComboBox)
+                 + kok.findChildren(QAbstractSpinBox)):
+        if not alan.isVisible():
+            continue
+        if isinstance(alan, QLineEdit) and isinstance(alan.parent(),
+                                                      (QComboBox, QAbstractSpinBox)):
+            continue
+        if alan.height() < alan.sizeHint().height():
+            ad = getattr(alan, "placeholderText", lambda: "")() or type(alan).__name__
+            sonuc.append((ad, alan.sizeHint().height(), alan.height()))
     return sonuc
 
 
@@ -515,7 +539,7 @@ def tasmalar(b: Baglam) -> list[dict]:
         if kasa and gerek.height() > alan.height():
             sonuc.append({"sayfa": anahtar, "yon": "dikey", "gerek": gerek.height(),
                           "mevcut": alan.height()})
-        for metin, satir, icerik in kirpilan_dugmeler(sayfa):
+        for metin, satir, icerik in kirpilan_yazilar(sayfa):
             sonuc.append({"sayfa": anahtar, "yon": f"yazı kırpılıyor '{metin}'",
                           "gerek": satir, "mevcut": icerik})
     # Menü, bütün öğeleri görünürken (en kalabalık hâli) bir kez denetlenir;
@@ -523,7 +547,7 @@ def tasmalar(b: Baglam) -> list[dict]:
     for dugme in b.pencere.nav_buttons.values():
         dugme.setVisible(True)
     b.isle()
-    for metin, satir, icerik in kirpilan_dugmeler(b.pencere.nav_scroll.widget()):
+    for metin, satir, icerik in kirpilan_yazilar(b.pencere.nav_scroll.widget()):
         sonuc.append({"sayfa": "menü", "yon": f"yazı kırpılıyor '{metin}'",
                       "gerek": satir, "mevcut": icerik})
     b.pencere.apply_nav_visibility()
