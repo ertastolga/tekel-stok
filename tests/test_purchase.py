@@ -145,15 +145,27 @@ def test_farkli_maliyetli_ayni_urun_ayri_satir_olur(services, bira):
 
 # ===================== Maliyet geçmişi ===================================
 def test_son_alis_fiyati_on_doldurulur(services, bira):
-    fis1 = services.purchases.start_draft()
-    services.purchases.add_line(fis1, bira, 24, unit_cost=5400)
-    services.purchases.commit(fis1)
+    """V1.2 (plan §5.8): ön doldurma EKRANIN işidir — bilinen son alışı açıkça
+    geçirir. ``add_line`` maliyetsiz çağrılırsa maliyet BİLİNMİYOR demektir
+    (tahmini satır), sessizce eski fiyat ya da 0 yazılmaz."""
+    for maliyet in (5000, 5400):                          # iki farklı alış
+        fis1 = services.purchases.start_draft()
+        services.purchases.add_line(fis1, bira, 24, unit_cost=maliyet)
+        services.purchases.commit(fis1)
 
     assert services.purchases.last_purchase_cost(bira) == 5400
 
     fis2 = services.purchases.start_draft()
-    services.purchases.add_line(fis2, bira, 24)          # maliyet verilmedi
-    assert services.purchases.lines(fis2)[0]["unit_cost"] == 5400
+    services.purchases.add_line(
+        fis2, bira, 24, unit_cost=services.purchases.last_purchase_cost(bira)
+    )
+    satir = services.purchases.lines(fis2)[0]
+    assert (satir["unit_cost"], satir["cost_is_estimated"]) == (5400, 0)
+
+    fis3 = services.purchases.start_draft()
+    services.purchases.add_line(fis3, bira, 24)          # maliyet verilmedi
+    satir = services.purchases.lines(fis3)[0]
+    assert (satir["unit_cost"], satir["cost_is_estimated"]) == (0, 1)
 
 
 def test_degisen_maliyetler_vurgulanir(services, bira, cips_urunu):

@@ -109,6 +109,7 @@ class InventoryService:
         reverses_movement_id: int | None = None,
         note: str | None = None,
         fallback_basis: CostBasis | None = None,
+        cost_is_estimated: bool = False,
     ) -> MovementResult:
         """Bir stok hareketi yazar ve önbellekleri günceller.
 
@@ -117,6 +118,13 @@ class InventoryService:
         işlemlerin parçasıdır ve onlarla birlikte geri alınabilmelidir.
 
         ``quantity_delta`` işaretlidir: giren mal artı, çıkan mal eksi.
+
+        ``cost_is_estimated=True`` (yalnızca giriş): maliyet BİLİNMİYOR. Birim
+        maliyet verilmemişse tahmini kural uygulanır (havuz ortalaması → son
+        ortalama → bilinen son alış → 0); hareket "tahmini" işaretlenir. Tahmini
+        ve bedelsiz (açıkça 0) giriş ``last_purchase_cost`` /
+        ``last_purchase_at_utc``'yi DAMGALAMAZ (plan §5.8); açık, sıfırdan büyük
+        maliyetli çağrılar V1.1 ile birebir aynıdır.
         """
         if quantity_delta == 0:
             raise ValueError("apply_movement sıfır miktarla çağrılamaz")
@@ -141,6 +149,19 @@ class InventoryService:
             fill = 0
             resolved_unit_cost = original["unit_cost"]
             estimated = bool(original["is_estimated_cost"])
+
+        elif quantity_delta > 0 and cost_is_estimated:
+            if unit_cost is None:
+                basis = fallback_basis or costing.cost_basis(
+                    stock, value, row["last_avg_cost"], row["last_purchase_cost"]
+                )
+                unit_cost = basis.unit_cost
+            outcome = costing.inbound_value(quantity, stock, unit_cost, True)
+            value_delta = outcome.value_delta
+            cost_total = outcome.cost_total
+            fill = outcome.fill_quantity
+            resolved_unit_cost = outcome.unit_cost
+            estimated = True
 
         elif quantity_delta > 0:
             if unit_cost is None:
@@ -210,6 +231,7 @@ class InventoryService:
         self._update_stamps(
             conn, product_id, movement_type, balance_after, new_value,
             resolved_unit_cost, stamp,
+            gercek_alis=not estimated and (resolved_unit_cost or 0) > 0,
         )
 
         return MovementResult(
@@ -233,9 +255,24 @@ class InventoryService:
         new_value: int,
         unit_cost: int | None,
         stamp: TimeStamp,
+        gercek_alis: bool = True,
     ) -> None:
-        """Analitik damgaları ve maliyet temeli yedeklerini günceller."""
-        if movement_type in (MovementType.PURCHASE, MovementType.INITIAL_STOCK):
+        """Analitik damgaları ve maliyet temeli yedeklerini günceller.
+
+        ``gercek_alis=False`` (tahmini ya da bedelsiz giriş): son alış fiyatı ve
+        zamanı DEĞİŞMEZ; son ortalama her girişte olduğu gibi havuzdan türetilir.
+        """
+        giris = movement_type in (MovementType.PURCHASE, MovementType.INITIAL_STOCK)
+        if giris and not gercek_alis:
+            conn.execute(
+                "UPDATE products SET "
+                "  last_avg_cost = COALESCE(?, last_avg_cost), "
+                "  first_stocked_at_utc = COALESCE(first_stocked_at_utc, ?) "
+                " WHERE id = ?",
+                (costing.average_cost(balance_after, new_value),
+                 stamp.created_at_utc, product_id),
+            )
+        elif giris:
             average = costing.average_cost(balance_after, new_value)
             conn.execute(
                 "UPDATE products SET last_purchase_cost = ?, "
@@ -269,10 +306,13 @@ class InventoryService:
         self,
         product_id: int,
         quantity: int,
-        unit_cost: int,
+        unit_cost: int | None,
         note: str | None = None,
     ) -> MovementResult | None:
         """Ürünün ilk (sayılmış) stoğunu kurar.
+
+        ``unit_cost=None``: maliyet bilinmiyor → tahmini kural, son alış
+        damgalanmaz (V1.1 burada 0 yazıyordu, D-06).
 
         ``quantity=0`` da geçerlidir ve anlamlıdır: "saydım, gerçekten sıfır".
         Bu durumda hareket yazılmaz ama ürün SAYILMIŞ olarak damgalanır — böylece
@@ -292,6 +332,7 @@ class InventoryService:
                 unit_cost=unit_cost,
                 ref_type=RefType.INITIAL,
                 note=note or "Başlangıç stoğu",
+                cost_is_estimated=unit_cost is None,
             )
 
     @staticmethod

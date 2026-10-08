@@ -18,7 +18,7 @@ import sqlite3
 from app.core.clock import BEGINNING_OF_TIME, DEFAULT_BUSINESS_DAY_START_HOUR
 from app.core.tr import normalize_name
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 # =========================================================================
@@ -807,6 +807,21 @@ _V4_FIYAT_GRUPLARI = [
     "ON price_change_batches(reverses_batch_id) WHERE reverses_batch_id IS NOT NULL",
 ]
 
+#: v5 (V1.2 M6a) — Alış maliyeti anlamı (plan §5.8). Maliyeti bilinmeyen
+#: satır TAHMİNİ işaretlenir; tamamlanırken ürünün önceki ortalaması ve son
+#: alış zamanı da saklanır ki geri alma hepsini döndürebilsin (D-20).
+#: ``previous_stamps_captured``: satır bu sürümle tamamlandı mı (eski satırlar
+#: 0 — onların önceki ortalaması bilinmez, uydurulmaz). Veri YAZILMAZ: V1.1'de
+#: maliyeti 0 kaydedilmiş eski satırları her tüketici "bilinmiyor" sayar.
+_V5_ALIS_MALIYETI = [
+    "ALTER TABLE purchase_receipt_lines ADD COLUMN cost_is_estimated INTEGER NOT NULL "
+    "DEFAULT 0 CHECK (cost_is_estimated IN (0,1))",
+    "ALTER TABLE purchase_receipt_lines ADD COLUMN previous_avg_cost INTEGER",
+    "ALTER TABLE purchase_receipt_lines ADD COLUMN previous_purchase_at_utc INTEGER",
+    "ALTER TABLE purchase_receipt_lines ADD COLUMN previous_stamps_captured INTEGER "
+    "NOT NULL DEFAULT 0 CHECK (previous_stamps_captured IN (0,1))",
+]
+
 #: Her göç ya SQL metni ya da ``conn`` alan bir fonksiyondur. Göçler bir kez
 #: işlendikten sonra DEĞİŞTİRİLMEZ; yalnızca yeni sürüm eklenir.
 MIGRATIONS: list[tuple[int, list]] = [
@@ -814,4 +829,5 @@ MIGRATIONS: list[tuple[int, list]] = [
     (2, _V2_BEKLEYEN_SEPETLER),
     (3, _V3_REFERANS_MALIYET),
     (4, _V4_FIYAT_GRUPLARI),
+    (5, _V5_ALIS_MALIYETI),
 ]

@@ -479,8 +479,9 @@ class ProductEditDialog(QDialog):
             self.services.catalog.add_product_location(self.product_id, konum, True)
         adet = self._initial_stock()
         if adet is not None:
+            # Boş maliyet = bilinmiyor (tahmini); 0 yazılmaz (D-06).
             self.services.inventory.set_initial_stock(
-                self.product_id, adet, self._purchase_cost() or 0
+                self.product_id, adet, self._purchase_cost()
             )
 
     def _checked_locations(self) -> list[int] | None:

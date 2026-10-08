@@ -19,6 +19,18 @@ Bu koşulda ters kayıt stok ve değeri fiş öncesi hâline TAM olarak döndür
 
 Koşul sağlanmıyorsa geri alma REDDEDİLİR ve kullanıcıya sahte bir geri alma
 yerine "Düzeltme Girişi" önerilir. ``force`` gibi bir kaçış yolu YOKTUR.
+
+Maliyet anlamı (V1.2, plan §5.8)
+--------------------------------
+* ``add_line(unit_cost=None)`` = maliyet BİLİNMİYOR: satır "tahmini" işaretlenir
+  ve tamamlanırken tahmini kuralla (havuz ortalaması → son ortalama → bilinen
+  son alış → 0) değerlenir. Ekranlar bilinen son alışı ÖN DOLDURUR ve açıkça
+  geçirir; bu yol yalnızca gerçekten bilinmeyen maliyet içindir.
+* ``unit_cost=0`` = bedelsiz mal (açık karar).
+* Tahmini ve bedelsiz satırlar ürünün "son alış" fiyatını ve zamanını
+  DEĞİŞTİRMEZ; maliyet değişimi sayılmaz.
+* Tamamlanırken önceki son alış, son ortalama ve son alış zamanı satıra
+  yazılır; geri alma (ters sırayla) üçünü de döndürür (D-20).
 """
 from __future__ import annotations
 
@@ -29,6 +41,7 @@ from app.core.clock import now_utc
 from app.core.db import Database
 from app.core.errors import (
     BosFis,
+    GecersizFiyat,
     FisBulunamadi,
     FisGeriAlinamaz,
     FisZatenTamamlanmis,
@@ -88,15 +101,17 @@ class PurchaseService:
         )
 
     def last_purchase_cost(self, product_id: int) -> int | None:
-        """Son alış fiyatı — giriş ekranında ÖN DOLDURULUR.
+        """BİLİNEN son alış fiyatı — giriş ekranında ÖN DOLDURULUR.
 
         Fiyat değişmediyse operatörün hiçbir şey yapması gerekmez; yalnızca
-        değişen maliyetler dikkat ister.
+        değişen maliyetler dikkat ister. V1.1'in bıraktığı 0 "bilinmiyor"dur.
         """
         row = self.db.query_one(
             "SELECT last_purchase_cost FROM products WHERE id = ?", (product_id,)
         )
-        return None if row is None else row["last_purchase_cost"]
+        if row is None or not row["last_purchase_cost"] or row["last_purchase_cost"] <= 0:
+            return None
+        return row["last_purchase_cost"]
 
     def add_line(
         self,
@@ -111,8 +126,16 @@ class PurchaseService:
 
         Bu bir ARAYÜZ kolaylığıdır, şema kısıtı değil: gerçek bir irsaliyede
         aynı ürün iki farklı fiyatla iki satırda gelebilir ve şema buna izin
-        verir (``UNIQUE(receipt_id, line_no)``).
+        verir (``UNIQUE(receipt_id, line_no)``). Birleştirme anahtarı (ürün,
+        tahmini mi, maliyet): maliyeti bilinmeyen satırlar kendi aralarında
+        birleşir.
+
+        ``unit_cost=None`` maliyetin BİLİNMEDİĞİ anlamına gelir (bkz. modül
+        açıklaması); ön doldurma çağıranın işidir.
         """
+        tahmini = unit_cost is None
+        if not tahmini and int(unit_cost) < 0:
+            raise GecersizFiyat("Alış fiyatı eksi olamaz.")
         with self.db.transaction() as conn:
             fis = conn.execute(
                 "SELECT status FROM purchase_receipts WHERE id = ?", (receipt_id,)
@@ -122,14 +145,15 @@ class PurchaseService:
             if fis["status"] != "DRAFT":
                 raise FisZatenTamamlanmis()
 
-            if unit_cost is None:
-                unit_cost = self.last_purchase_cost(product_id) or 0
+            if tahmini:
+                unit_cost = 0          # tamamlanırken tahmini kuralla belirlenir
 
             mevcut = conn.execute(
                 "SELECT * FROM purchase_receipt_lines "
-                " WHERE receipt_id = ? AND product_id = ? AND unit_cost = ? "
+                " WHERE receipt_id = ? AND product_id = ? AND cost_is_estimated = ? "
+                "   AND (cost_is_estimated = 1 OR unit_cost = ?) "
                 " ORDER BY line_no LIMIT 1",
-                (receipt_id, product_id, unit_cost),
+                (receipt_id, product_id, int(tahmini), unit_cost),
             ).fetchone()
 
             if mevcut is not None:
@@ -150,12 +174,12 @@ class PurchaseService:
                 conn.execute(
                     "INSERT INTO purchase_receipt_lines(receipt_id, line_no, product_id, "
                     "  quantity, unit_cost, line_total, previous_unit_cost, barcode_used, "
-                    "  barcode_multiplier) VALUES(?,?,?,?,?,?,?,?,?)",
+                    "  barcode_multiplier, cost_is_estimated) VALUES(?,?,?,?,?,?,?,?,?,?)",
                     (
                         receipt_id, sira, product_id, quantity, unit_cost,
                         quantity * unit_cost,
                         onceki["last_purchase_cost"] if onceki else None,
-                        barcode_used, max(1, int(multiplier)),
+                        barcode_used, max(1, int(multiplier)), int(tahmini),
                     ),
                 )
             self._refresh_totals(conn, receipt_id)
@@ -192,23 +216,31 @@ class PurchaseService:
             self._refresh_totals(conn, satir["receipt_id"])
 
     def set_line_cost(self, line_id: int, unit_cost: int) -> None:
+        """Satırın alış fiyatını girer; "tahmini" işareti KALKAR (0 = bedelsiz)."""
+        if int(unit_cost) < 0:
+            raise GecersizFiyat("Alış fiyatı eksi olamaz.")
         with self.db.transaction() as conn:
             satir = self._taslak_satiri(conn, line_id)
             if satir is None:
                 return
             conn.execute(
-                "UPDATE purchase_receipt_lines SET unit_cost = ?, line_total = ? "
-                " WHERE id = ?",
+                "UPDATE purchase_receipt_lines SET unit_cost = ?, line_total = ?, "
+                "  cost_is_estimated = 0 WHERE id = ?",
                 (unit_cost, satir["quantity"] * unit_cost, line_id),
             )
             self._refresh_totals(conn, satir["receipt_id"])
 
     def changed_cost_lines(self, receipt_id: int) -> list[sqlite3.Row]:
-        """Alış fiyatı DEĞİŞEN satırlar — son incelemede vurgulanır."""
+        """Alış fiyatı DEĞİŞEN satırlar — son incelemede vurgulanır.
+
+        Yalnızca iki BİLİNEN maliyet karşılaştırılır: tahmini satırlar, bedelsiz
+        (0) satırlar ve V1.1'in bıraktığı 0 "önceki alış" değişim sayılmaz.
+        """
         return self.db.query(
             "SELECT l.*, p.name FROM purchase_receipt_lines l "
             "  JOIN products p ON p.id = l.product_id "
-            " WHERE l.receipt_id = ? AND l.previous_unit_cost IS NOT NULL "
+            " WHERE l.receipt_id = ? AND l.cost_is_estimated = 0 AND l.quantity > 0 "
+            "   AND l.unit_cost > 0 AND l.previous_unit_cost > 0 "
             "   AND l.previous_unit_cost <> l.unit_cost ORDER BY l.line_no",
             (receipt_id,),
         )
@@ -263,23 +295,33 @@ class PurchaseService:
                 raise BosFis()
 
             for satir in satirlar:
-                # Önceki maliyet hareketten ÖNCE alınır; sonra alınsaydı yeni
+                # Önceki damgalar hareketten ÖNCE alınır; sonra alınsaydı yeni
                 # maliyeti yakalar ve "değişti mi?" karşılaştırması bozulurdu.
+                # Geri alma bu üç değeri ters sırayla geri koyar (D-20).
                 onceki = conn.execute(
-                    "SELECT last_purchase_cost FROM products WHERE id = ?",
+                    "SELECT last_purchase_cost, last_avg_cost, last_purchase_at_utc "
+                    "  FROM products WHERE id = ?",
                     (satir["product_id"],),
-                ).fetchone()["last_purchase_cost"]
+                ).fetchone()
+                tahmini = bool(satir["cost_is_estimated"])
 
                 hareket = self.inventory.apply_movement(
                     conn, satir["product_id"], MovementType.PURCHASE,
-                    satir["quantity"], stamp, unit_cost=satir["unit_cost"],
+                    satir["quantity"], stamp,
+                    unit_cost=None if tahmini else satir["unit_cost"],
                     ref_type=RefType.RECEIPT, ref_id=receipt_id,
-                    ref_line_id=satir["id"],
+                    ref_line_id=satir["id"], cost_is_estimated=tahmini,
                 )
+                # Tahmini satırın maliyeti artık bellidir (işaret KALIR).
+                birim = hareket.unit_cost if tahmini else satir["unit_cost"]
                 conn.execute(
-                    "UPDATE purchase_receipt_lines SET previous_unit_cost = ? "
+                    "UPDATE purchase_receipt_lines SET previous_unit_cost = ?, "
+                    "  previous_avg_cost = ?, previous_purchase_at_utc = ?, "
+                    "  previous_stamps_captured = 1, unit_cost = ?, line_total = ? "
                     " WHERE id = ?",
-                    (onceki, satir["id"]),
+                    (onceki["last_purchase_cost"], onceki["last_avg_cost"],
+                     onceki["last_purchase_at_utc"], birim, birim * satir["quantity"],
+                     satir["id"]),
                 )
                 log.debug(
                     "Fiş %s: ürün %s +%s -> bakiye %s",
@@ -398,12 +440,16 @@ class PurchaseService:
                 ters_satir = conn.execute(
                     "INSERT INTO purchase_receipt_lines(receipt_id, line_no, product_id, "
                     "  quantity, unit_cost, line_total, previous_unit_cost, barcode_used, "
-                    "  barcode_multiplier) VALUES(?,?,?,?,?,?,?,?,?)",
+                    "  barcode_multiplier, cost_is_estimated, previous_avg_cost, "
+                    "  previous_purchase_at_utc, previous_stamps_captured) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         ters_id, satir["line_no"], satir["product_id"],
                         -satir["quantity"], satir["unit_cost"], -satir["line_total"],
                         satir["previous_unit_cost"], satir["barcode_used"],
-                        satir["barcode_multiplier"],
+                        satir["barcode_multiplier"], satir["cost_is_estimated"],
+                        satir["previous_avg_cost"], satir["previous_purchase_at_utc"],
+                        satir["previous_stamps_captured"],
                     ),
                 ).lastrowid
 
@@ -414,14 +460,7 @@ class PurchaseService:
                     reverses_movement_id=orijinal["id"] if orijinal else None,
                 )
 
-                # Son alış fiyatı YALNIZCA hâlâ bu fişin bıraktığı değerse
-                # geri alınır; sonradan başka bir fiş değiştirmişse tarihi
-                # yeniden yazmayız.
-                conn.execute(
-                    "UPDATE products SET last_purchase_cost = ? "
-                    " WHERE id = ? AND last_purchase_cost = ?",
-                    (satir["previous_unit_cost"], satir["product_id"], satir["unit_cost"]),
-                )
+                self._damgalari_dondur(conn, satir)
 
             self._refresh_totals(conn, ters_id)
             self.audit.record(
@@ -430,6 +469,41 @@ class PurchaseService:
                 "receipt", receipt_id, conn=conn,
             )
             return ters_id
+
+    @staticmethod
+    def _damgalari_dondur(conn: sqlite3.Connection, satir: sqlite3.Row) -> None:
+        """Geri alınan satırın değiştirdiği ürün damgalarını fiş öncesine döndürür.
+
+        Geri alma yalnızca KANITLANABİLİRKEN yapılır (üründe bu fişten sonra
+        başka hareket yok) ve satırlar ters sırayla işlenir; bu yüzden ürünün
+        damgalarını en son bu satır değiştirmiştir ve saklanan önceki değerler
+        doğrudan geri konabilir:
+          * gerçek alış satırı: son alış fiyatı, zamanı ve son ortalama,
+          * tahmini ya da bedelsiz satır: yalnızca son ortalama (diğerlerine
+            zaten dokunmamıştı).
+        V1.2'den önce tamamlanmış satırların önceki ortalaması/zamanı yoktur:
+        onlarda V1.1 kuralı sürer (yalnızca son alış fiyatı, hâlâ bu fişinse).
+        """
+        if not satir["previous_stamps_captured"]:
+            conn.execute(
+                "UPDATE products SET last_purchase_cost = ? "
+                " WHERE id = ? AND last_purchase_cost = ?",
+                (satir["previous_unit_cost"], satir["product_id"], satir["unit_cost"]),
+            )
+            return
+        gercek_alis = not satir["cost_is_estimated"] and satir["unit_cost"] > 0
+        if gercek_alis:
+            conn.execute(
+                "UPDATE products SET last_purchase_cost = ?, last_avg_cost = ?, "
+                "  last_purchase_at_utc = ? WHERE id = ?",
+                (satir["previous_unit_cost"], satir["previous_avg_cost"],
+                 satir["previous_purchase_at_utc"], satir["product_id"]),
+            )
+        else:
+            conn.execute(
+                "UPDATE products SET last_avg_cost = ? WHERE id = ?",
+                (satir["previous_avg_cost"], satir["product_id"]),
+            )
 
     def is_reversed(self, receipt_id: int) -> bool:
         return bool(

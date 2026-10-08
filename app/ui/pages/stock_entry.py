@@ -262,8 +262,12 @@ class StockEntryPage(Page):
                   multiplier: int) -> None:
         try:
             fis = self._ensure_receipt()
+            # Bilinen son alış ÖN DOLDURULUR ve açıkça geçirilir; bilinmiyorsa
+            # satır "maliyet bilinmiyor" (tahmini) olur — 0 yazılmaz (D-06).
             self.services.purchases.add_line(
-                fis, product_id, quantity, barcode_used=barcode, multiplier=multiplier
+                fis, product_id, quantity,
+                unit_cost=self.services.purchases.last_purchase_cost(product_id),
+                barcode_used=barcode, multiplier=multiplier,
             )
         except DomainError as hata:
             sound.error()
@@ -416,8 +420,10 @@ class StockEntryPage(Page):
         for index, satir in enumerate(satirlar):
             ad = QTableWidgetItem(satir["name"])
             adet = QTableWidgetItem(str(satir["quantity"]))
-            fiyat = QTableWidgetItem(format_tl(satir["unit_cost"]))
-            tutar = QTableWidgetItem(format_tl(satir["line_total"]))
+            tahmini = bool(satir["cost_is_estimated"])
+            fiyat = QTableWidgetItem(
+                "bilinmiyor" if tahmini else format_tl(satir["unit_cost"]))
+            tutar = QTableWidgetItem("—" if tahmini else format_tl(satir["line_total"]))
             for hucre in (adet, fiyat, tutar):
                 hucre.setTextAlignment(
                     Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
@@ -425,7 +431,7 @@ class StockEntryPage(Page):
             # Değişen alış fiyatı görsel olarak VURGULANIR; ayrıca son inceleme
             # metninde de adı geçer (renk tek başına anlam taşımaz).
             onceki = satir["previous_unit_cost"]
-            if onceki is not None and onceki != satir["unit_cost"]:
+            if not tahmini and onceki and satir["unit_cost"] and onceki != satir["unit_cost"]:
                 fiyat.setText(
                     f"{format_tl(satir['unit_cost'])}  (eski {format_tl(onceki)})"
                 )

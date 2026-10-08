@@ -382,10 +382,12 @@ class ProductService:
                 if initial_stock > 0:
                     from app.core.models import MovementType, RefType
 
+                    # Maliyetsiz başlangıç stoğu TAHMİNİDİR; 0 yazılmaz (D-06).
                     self.inventory.apply_movement(
                         conn, product_id, MovementType.INITIAL_STOCK, initial_stock,
-                        stamp, unit_cost=purchase_cost or 0,
+                        stamp, unit_cost=purchase_cost,
                         ref_type=RefType.INITIAL, note="Başlangıç stoğu",
+                        cost_is_estimated=purchase_cost is None,
                     )
                 else:
                     self.inventory.declare_zero_stock(

@@ -864,7 +864,7 @@ class Database:
         n = self.scalar(
             "SELECT COUNT(*) FROM products "
             "WHERE is_active = 1 AND current_stock > 0 AND stock_value = 0 "
-            "  AND last_avg_cost IS NULL AND last_purchase_cost IS NULL",
+            "  AND last_avg_cost IS NULL AND COALESCE(last_purchase_cost, 0) = 0",
             default=0,
         )
         if n:
