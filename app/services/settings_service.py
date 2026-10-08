@@ -111,6 +111,10 @@ class SettingsService:
         adim = self.get_int("price_rounding", VARSAYILAN_ADIM)
         return adim if adim in YUVARLAMA_ADIMLARI else VARSAYILAN_ADIM
 
+    def cost_change_alert_percent(self) -> int:
+        """Mal kabul fiyat incelemesi eşiği (%, 1–100; varsayılan 5)."""
+        return min(100, max(1, self.get_int("cost_change_alert_percent", 5)))
+
     def cash_change_calculator(self) -> bool:
         """NAKİT'e dokununca Para Üstü paneli açılsın mı (varsayılan: hayır)?"""
         return self.get_bool("cash_change_calculator", False)

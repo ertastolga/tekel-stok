@@ -112,6 +112,30 @@ class GeriAlmaSatiri:
 
 
 @dataclass(frozen=True, slots=True)
+class MalKabulOnerisi:
+    """Mal kabulde alış fiyatı belirgin değişen ürün için fiyat önerisi."""
+
+    product_id: int
+    ad: str
+    onceki_alis: int
+    yeni_alis: int
+    satis: int | None
+    onerilen: int | None
+
+    @property
+    def degisim_bp(self) -> int | None:
+        return pm.degisim_bp(self.onceki_alis, self.yeni_alis)
+
+    @property
+    def simdiki_marj_bp(self) -> int | None:
+        return pm.marj_bp(self.satis, self.yeni_alis)
+
+    @property
+    def onerilen_marj_bp(self) -> int | None:
+        return pm.marj_bp(self.onerilen, self.yeni_alis)
+
+
+@dataclass(frozen=True, slots=True)
 class ZamanOlayi:
     zaman_utc: int | None
     eski: int | None
@@ -357,6 +381,48 @@ class PricingService:
                 geri_alinan=batch_id,
             )
             return yeni_grup, len(uygun), len(satirlar) - len(uygun)
+
+    # ===================== Mal kabul fiyat incelemesi ====================
+    def mal_kabul_onerileri(self, receipt_id: int, esik_bp: int,
+                            adim: int = pm.VARSAYILAN_ADIM) -> list[MalKabulOnerisi]:
+        """Alış fiyatı en az ``esik_bp`` kadar değişen ürünler ve önerilen fiyat.
+
+        Yalnızca iki BİLİNEN alış karşılaştırılır (tahmini, bedelsiz ve eski 0
+        satırlar dışarıda). Aynı ürün fişte birden çok satırdaysa SON satır
+        (son alışı damgalayan) kullanılır. Öneri, eski satış/alış oranını korur
+        (``marji_koruyan_fiyat``); satış fiyatı ASLA kendiliğinden değişmez.
+        Fiş başladıktan SONRA fiyatı değiştirilmiş ürün "incelenmiş" sayılır ve
+        listeden düşer (yoksa güncel fiyattan yeniden öneri üretilirdi).
+        """
+        satirlar = self.db.query(
+            "SELECT l.product_id, l.unit_cost, l.previous_unit_cost, p.name, p.sale_price "
+            "  FROM purchase_receipt_lines l JOIN products p ON p.id = l.product_id "
+            "  JOIN purchase_receipts r ON r.id = l.receipt_id "
+            " WHERE l.receipt_id = ? AND l.quantity > 0 AND l.cost_is_estimated = 0 "
+            "   AND NOT EXISTS (SELECT 1 FROM price_history h "
+            "                    WHERE h.product_id = l.product_id "
+            "                      AND h.changed_at_utc >= r.created_at_utc) "
+            "   AND l.unit_cost > 0 AND l.previous_unit_cost > 0 "
+            "   AND l.line_no = (SELECT MAX(x.line_no) FROM purchase_receipt_lines x "
+            "                     WHERE x.receipt_id = l.receipt_id "
+            "                       AND x.product_id = l.product_id) "
+            " ORDER BY p.name_norm",
+            (receipt_id,),
+        )
+        sonuc = []
+        for s in satirlar:
+            degisim = pm.degisim_bp(s["previous_unit_cost"], s["unit_cost"])
+            if degisim is None or abs(degisim) < esik_bp:
+                continue
+            onerilen = None
+            if s["sale_price"]:
+                onerilen = pm.marji_koruyan_fiyat(
+                    s["sale_price"], s["previous_unit_cost"], s["unit_cost"], adim)
+            sonuc.append(MalKabulOnerisi(
+                s["product_id"], s["name"], s["previous_unit_cost"], s["unit_cost"],
+                s["sale_price"], onerilen,
+            ))
+        return sonuc
 
     # ===================== Zaman çizelgesi ===============================
     def zaman_cizelgesi(self, product_id: int) -> list[ZamanOlayi]:

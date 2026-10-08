@@ -50,6 +50,7 @@ AYAR_BOLUMU: dict[str, str] = {
     "slow_moving_days": "stok",
     "large_count_diff_threshold": "stok",
     "price_rounding": "stok",
+    "cost_change_alert_percent": "stok",
     # Yedekleme
     "auto_backup_interval_minutes": "yedekleme",
     "auto_backup_retention": "yedekleme",

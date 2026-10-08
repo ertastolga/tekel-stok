@@ -500,6 +500,9 @@ class SettingsPage(Page):
         self._kayit("price_rounding", self.rounding_combo, lambda: self._combo_yukle(
             self.rounding_combo, self.services.settings.price_rounding()))
         f.addLayout(self._satir("Toplu fiyat değişikliğinde yuvarla", self.rounding_combo))
+        self.cost_alert_spin = self._spin("cost_change_alert_percent", 1, 100, 1, " %")
+        f.addLayout(self._satir("Mal kabulde alış fiyatı şu kadar değişirse fiyatı "
+                                "incelemeye al", self.cost_alert_spin))
         f.addWidget(self._hint(
             "Artışlar yukarı, düşüşler aşağı yuvarlanır: %5 artış hiçbir ürünü "
             "ucuzlatmaz. \"Fiyatı şu yap\" yazdığınız tutarı aynen kullanır."

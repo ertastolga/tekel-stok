@@ -81,6 +81,34 @@ class PurchaseService:
                 (supplier_id, invoice_no, tarih, now, note),
             ).lastrowid
 
+    def set_header(
+        self,
+        receipt_id: int,
+        supplier_id: int | None,
+        invoice_no: str | None,
+        receipt_date: str | None = None,
+    ) -> None:
+        """Taslak fişin başlığı (tedarikçi, fatura no, tarih) — yalnızca TASLAKTA.
+
+        Fiş tarihi bilgi amaçlıdır (faturadaki tarih); stok hareketleri
+        tamamlandıkları anın iş gününe yazılır.
+        """
+        with self.db.transaction() as conn:
+            fis = conn.execute(
+                "SELECT status, receipt_date FROM purchase_receipts WHERE id = ?",
+                (receipt_id,),
+            ).fetchone()
+            if fis is None:
+                raise FisBulunamadi()
+            if fis["status"] != "DRAFT":
+                raise FisZatenTamamlanmis()
+            conn.execute(
+                "UPDATE purchase_receipts SET supplier_id = ?, invoice_no = ?, "
+                "  receipt_date = ? WHERE id = ?",
+                (supplier_id, (invoice_no or "").strip() or None,
+                 receipt_date or fis["receipt_date"], receipt_id),
+            )
+
     def open_drafts(self) -> list[sqlite3.Row]:
         """Kurtarılabilir taslaklar. Açılışta kullanıcıya sorulur."""
         return self.db.query(
@@ -98,7 +126,7 @@ class PurchaseService:
 
     def lines(self, receipt_id: int) -> list[sqlite3.Row]:
         return self.db.query(
-            "SELECT l.*, p.name FROM purchase_receipt_lines l "
+            "SELECT l.*, p.name, p.sale_price FROM purchase_receipt_lines l "
             "  JOIN products p ON p.id = l.product_id "
             " WHERE l.receipt_id = ? ORDER BY l.line_no",
             (receipt_id,),

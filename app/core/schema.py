@@ -672,6 +672,9 @@ DEFAULT_SETTINGS: dict[str, str] = {
     # Toplu fiyat değişikliğinde yuvarlama adımı (kuruş): 1 | 50 | 100 | 500.
     # Artışlar yukarı, düşüşler aşağı yuvarlanır (yön korunur).
     "price_rounding": "100",
+    # Mal kabulde alış fiyatı bu yüzdeden fazla değişen ürünler fiyat
+    # incelemesine düşer (satış fiyatı yalnızca açık onayla değişir).
+    "cost_change_alert_percent": "5",
     # --- Yedekleme ---
     "auto_backup_interval_minutes": "120",
     "auto_backup_retention": "10",
