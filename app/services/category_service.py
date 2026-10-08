@@ -127,6 +127,21 @@ class CategoryService:
         ust = self.get(satir["parent_id"])
         return f"{ust['name']} > {satir['name']}" if ust else satir["name"]
 
+    def paths(self) -> dict[int, str]:
+        """Bütün kategorilerin "Üst > Alt" yolu (TEK sorgu; liste ekranları için).
+
+        Kaldırılmış kategoriler de vardır: eski ürünün kategorisi görünmeli.
+        """
+        satirlar = self.db.query("SELECT id, parent_id, name FROM categories")
+        adlar = {s["id"]: s["name"] for s in satirlar}
+        return {
+            s["id"]: (
+                f"{adlar[s['parent_id']]} > {s['name']}"
+                if s["parent_id"] in adlar else s["name"]
+            )
+            for s in satirlar
+        }
+
     def tree(self, include_inactive: bool = False) -> list[KategoriDugumu]:
         """Üst kategoriler ve altları, ürün sayılarıyla (yalnızca aktif ürünler).
 

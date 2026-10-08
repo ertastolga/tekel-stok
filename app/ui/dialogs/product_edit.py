@@ -6,11 +6,18 @@ sonradan tamamlanır.
 
 "Benzer Üründen Oluştur" marka, kategori, birim ve rafları kopyalar; barkod,
 ad ve fiyat kopyalanmaz — onlar ürünü ayıran şeylerdir.
+
+Düzenleme (V1.2, D-09): pencerede yapılan HER ŞEY (alanlar, fiyat, etiketler,
+tedarikçi, barkod ekleme/kaldırma, yerler, referans alış fiyatı) yalnızca
+"Kaydet"e basınca ve TEK işlemde yazılır; "Vazgeç" hiçbir şeyi değiştirmez.
+Esas raf korunur. Ürünün kategorisi kaldırılmışsa listede "(pasif)" olarak
+görünür ve kaydedince SİLİNMEZ.
 """
 from __future__ import annotations
 
 import logging
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -36,6 +43,9 @@ from app.ui.dialogs.common_dialogs import ask_confirm, show_error
 
 log = logging.getLogger(__name__)
 
+#: Liste öğesinde kimlik saklanan rol (Qt.ItemDataRole.UserRole).
+VERI_ROLU = Qt.ItemDataRole.UserRole
+
 MODE_CREATE = "create"
 MODE_EDIT = "edit"
 MODE_CLONE = "clone"
@@ -49,6 +59,9 @@ class ProductEditDialog(QDialog):
         self.mode = mode
         self.source_id = product_id if mode == MODE_CLONE else None
         self.product_id = product_id if mode == MODE_EDIT else None
+        #: Kaydet'e kadar BEKLETİLEN barkod değişiklikleri (Vazgeç = hiçbiri).
+        self.pending_barcode_adds: list[tuple[str, str, int]] = []
+        self.pending_barcode_removals: set[int] = set()
 
         basliklar = {
             MODE_CREATE: "Yeni Ürün",
@@ -74,12 +87,15 @@ class ProductEditDialog(QDialog):
         dugmeler.addStretch(1)
         vazgec = QPushButton("Vazgeç")
         vazgec.clicked.connect(self.reject)
-        kaydet = QPushButton("Kaydet")
-        kaydet.setObjectName("primary")
-        kaydet.setDefault(True)
-        kaydet.clicked.connect(self._save)
+        self.save_button = QPushButton("Kaydet")
+        self.save_button.setObjectName("primary")
+        self.save_button.clicked.connect(self._save)
+        # Okuyucunun Enter'ı pencereyi KAYDETMEMELİ: varsayılan düğme yok.
+        for dugme in (vazgec, self.save_button):
+            dugme.setAutoDefault(False)
+            dugme.setDefault(False)
         dugmeler.addWidget(vazgec)
-        dugmeler.addWidget(kaydet)
+        dugmeler.addWidget(self.save_button)
         duzen.addLayout(dugmeler)
 
         self._load()
@@ -107,6 +123,15 @@ class ProductEditDialog(QDialog):
                 self.category_combo.addItem(f"   {alt['name']}", alt["id"])
         form.addRow("Kategori", self.category_combo)
 
+        self.supplier_combo = QComboBox()
+        self.supplier_combo.addItem("Seçilmedi", None)
+        for tedarikci in self.services.suppliers.all():
+            self.supplier_combo.addItem(tedarikci["name"], tedarikci["id"])
+        form.addRow("Tedarikçi", self.supplier_combo)
+
+        self.tags_edit = self._text_field("virgülle ayırın: soğuk, kutu")
+        form.addRow("Etiketler", self.tags_edit)
+
         self.family_edit = self._text_field("Örnek: Coca-Cola")
         form.addRow("Ürün ailesi", self.family_edit)
 
@@ -133,6 +158,12 @@ class ProductEditDialog(QDialog):
         self.critical_spin.setValue(varsayilan_kritik)
         self.critical_spin.setProperty("scannerExempt", True)
         form.addRow("Kritik stok sınırı", self.critical_spin)
+
+        if self.mode == MODE_EDIT:
+            # Katalog / tedarikçi listesi fiyatı: stok değerine ve "son alış"a
+            # GİRMEZ; yalnızca bilgi ve fiyat önerisi içindir.
+            self.reference_edit = self._text_field("Bilmiyorsanız boş bırakın")
+            form.addRow("Referans alış (katalog) (TL)", self.reference_edit)
 
         if self.mode != MODE_EDIT:
             self.barcode_edit = self._text_field("Barkodu okutabilirsiniz")
@@ -169,6 +200,7 @@ class ProductEditDialog(QDialog):
 
         ekle = QHBoxLayout()
         self.new_barcode_edit = self._text_field("Yeni barkodu okutun")
+        self.new_barcode_edit.returnPressed.connect(self._add_barcode)
         ekle.addWidget(self.new_barcode_edit, 2)
 
         self.barcode_type_combo = QComboBox()
@@ -254,8 +286,20 @@ class ProductEditDialog(QDialog):
                 self.family_edit.setText(aile["name"])
 
         index = self.category_combo.findData(urun["category_id"])
+        if index < 0 and urun["category_id"] is not None:
+            # Kaldırılmış kategori: görünür kalır, kaydedince kaybolmaz.
+            yol = self.services.categories.path(urun["category_id"])
+            self.category_combo.addItem(f"{yol} (pasif)", urun["category_id"])
+            index = self.category_combo.findData(urun["category_id"])
         if index >= 0:
             self.category_combo.setCurrentIndex(index)
+        index = self.supplier_combo.findData(urun["default_supplier_id"])
+        if index >= 0:
+            self.supplier_combo.setCurrentIndex(index)
+        kaynak_etiketler = self.services.catalog.tags_of(kaynak_id)
+        self.tags_edit.setText(", ".join(t["name"] for t in kaynak_etiketler))
+        if self.mode == MODE_EDIT and urun["reference_cost"] is not None:
+            self.reference_edit.setText(kurus_to_tl_text(urun["reference_cost"]))
         self.unit_combo.setCurrentText(urun["unit_label"])
         self.vat_spin.setValue(urun["vat_rate"] or 0)
         self.min_spin.setValue(urun["min_stock"])
@@ -266,15 +310,24 @@ class ProductEditDialog(QDialog):
             self._reload_locations()
 
     def _reload_barcodes(self) -> None:
+        """Kayıtlı barkodlar (kaldırılacaklar hariç) + bekleyen eklemeler."""
         self.barcode_list.clear()
         for barkod in self.services.barcodes.barcodes_of(self.product_id):
+            if barkod["id"] in self.pending_barcode_removals:
+                continue
             etiket = BARCODE_TYPE_LABELS.get(barkod["barcode_type"], "")
             carpan = (
                 f" × {barkod['quantity_multiplier']}"
                 if barkod["quantity_multiplier"] > 1 else ""
             )
             oge = QListWidgetItem(f"{barkod['barcode_norm']}   [{etiket}{carpan}]")
-            oge.setData(32, barkod["id"])
+            oge.setData(VERI_ROLU, barkod["id"])
+            self.barcode_list.addItem(oge)
+        for sira, (barkod, tur, carpan) in enumerate(self.pending_barcode_adds):
+            etiket = BARCODE_TYPE_LABELS.get(tur, "")
+            ek = f" × {carpan}" if carpan > 1 else ""
+            oge = QListWidgetItem(f"{barkod}   [{etiket}{ek}]   (kaydedince eklenecek)")
+            oge.setData(VERI_ROLU, -(sira + 1))
             self.barcode_list.addItem(oge)
 
     def _reload_locations(self) -> None:
@@ -284,25 +337,32 @@ class ProductEditDialog(QDialog):
         }
         for konum in self.services.catalog.locations():
             oge = QListWidgetItem(konum["name"])
-            oge.setFlags(oge.flags() | 16)          # Qt.ItemIsUserCheckable
-            oge.setCheckState(2 if konum["id"] in mevcut else 0)
-            oge.setData(32, konum["id"])
+            oge.setFlags(oge.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            oge.setCheckState(
+                Qt.CheckState.Checked if konum["id"] in mevcut else Qt.CheckState.Unchecked
+            )
+            oge.setData(VERI_ROLU, konum["id"])
             self.location_list.addItem(oge)
 
     # ===================== Barkod işlemleri ==============================
     def _add_barcode(self) -> None:
+        """Barkod Kaydet'e kadar BEKLETİLİR; çakışma hemen söylenir."""
         metin = self.new_barcode_edit.text().strip()
         if not metin:
             return
-        try:
-            self.services.barcodes.add_barcode(
-                self.product_id, metin,
-                self.barcode_type_combo.currentData(),
-                self.multiplier_spin.value(),
-            )
-        except DomainError as hata:
-            show_error(self, hata.message, hata.detail)
+        sahip = self.services.barcodes.owner_of(metin)
+        if sahip is not None and sahip["product_id"] != self.product_id:
+            show_error(self, f"Bu barkod zaten {sahip['name']} ürününde kayıtlı.")
             return
+        normal = self.services.barcodes.normalize(metin)
+        if sahip is not None or any(
+            self.services.barcodes.normalize(b) == normal for b, _, _ in self.pending_barcode_adds
+        ):
+            show_error(self, "Bu barkod bu üründe zaten kayıtlı.")
+            return
+        self.pending_barcode_adds.append(
+            (metin, self.barcode_type_combo.currentData(), self.multiplier_spin.value())
+        )
         self.new_barcode_edit.clear()
         self.multiplier_spin.setValue(1)
         self._reload_barcodes()
@@ -311,13 +371,19 @@ class ProductEditDialog(QDialog):
         oge = self.barcode_list.currentItem()
         if oge is None:
             return
+        kimlik = oge.data(VERI_ROLU)
+        if kimlik < 0:                                    # henüz eklenmemiş
+            del self.pending_barcode_adds[-kimlik - 1]
+            self._reload_barcodes()
+            return
         if not ask_confirm(
             self, "Bu barkod kullanımdan kaldırılsın mı?",
-            "Barkod silinmez, geçmişte kalır. Kasada artık okunmaz.",
+            "Kaydet'e basınca kaldırılır. Barkod silinmez, geçmişte kalır; kasada "
+            "artık okunmaz.",
             accept_text="Evet",
         ):
             return
-        self.services.barcodes.deactivate_barcode(oge.data(32))
+        self.pending_barcode_removals.add(kimlik)
         self._reload_barcodes()
 
     # ===================== Kaydetme ======================================
@@ -337,23 +403,41 @@ class ProductEditDialog(QDialog):
                 self.price_edit.setFocus()
                 return
 
-        alanlar = {
-            "brand_id": self.services.catalog.ensure_brand(self.brand_edit.text()),
-            "family_id": self.services.catalog.ensure_family(self.family_edit.text()),
+        temel = {
             "category_id": self.category_combo.currentData(),
             "unit_label": self.unit_combo.currentText(),
             "vat_rate": self.vat_spin.value(),
             "min_stock": self.min_spin.value(),
             "critical_stock": self.critical_spin.value(),
+            "default_supplier_id": self.supplier_combo.currentData(),
         }
+        etiketler = [t.strip() for t in self.tags_edit.text().split(",") if t.strip()]
 
         try:
             if self.mode == MODE_EDIT:
-                self.services.products.update(self.product_id, name=ad, **alanlar)
-                if fiyat is not None:
-                    self.services.products.set_price(self.product_id, fiyat)
-                self._save_locations()
-            elif self.mode == MODE_CLONE:
+                referans_metni = self.reference_edit.text().strip()
+                referans = tl_to_kurus(referans_metni) if referans_metni else None
+                # TEK işlem: marka/aile kaydı dahil hepsi ya olur ya hiçbiri.
+                self.services.products.save_edit(
+                    self.product_id,
+                    {"name": ad, **temel},
+                    sale_price=fiyat,
+                    brand_name=self.brand_edit.text().strip(),
+                    family_name=self.family_edit.text().strip(),
+                    tags=etiketler,
+                    location_ids=self._checked_locations(),
+                    barcode_adds=list(self.pending_barcode_adds),
+                    barcode_removals=sorted(self.pending_barcode_removals),
+                    reference_cost=referans,
+                )
+                self.accept()
+                return
+            alanlar = {
+                **temel,
+                "brand_id": self.services.catalog.ensure_brand(self.brand_edit.text()),
+                "family_id": self.services.catalog.ensure_family(self.family_edit.text()),
+            }
+            if self.mode == MODE_CLONE:
                 self.product_id = self.services.products.create_from_similar(
                     self.source_id, ad, sale_price=fiyat, **alanlar
                 )
@@ -368,12 +452,19 @@ class ProductEditDialog(QDialog):
                     **alanlar,
                 )
         except DomainError as hata:
-            show_error(self, hata.message, hata.detail)
+            if hata.detail:
+                log.info("Ürün kaydedilemedi: %s | %s", hata.message, hata.detail)
+            show_error(self, hata.message)
             return
-        except Exception as hata:
+        except Exception:
             log.exception("Ürün kaydedilemedi")
-            show_error(self, "Ürün kaydedilemedi. Hiçbir bilgi değişmedi.", str(hata))
+            show_error(self, "Ürün kaydedilemedi. Hiçbir bilgi değişmedi.")
             return
+        if self.product_id is not None and (etiketler or self.mode == MODE_CLONE):
+            self.services.catalog.set_tags(
+                self.product_id,
+                [self.services.catalog.ensure_tag(t) for t in etiketler],
+            )
         self.accept()
 
     def _save_new_extras(self) -> None:
@@ -392,17 +483,14 @@ class ProductEditDialog(QDialog):
                 self.product_id, adet, self._purchase_cost() or 0
             )
 
-    def _save_locations(self) -> None:
+    def _checked_locations(self) -> list[int] | None:
         if not hasattr(self, "location_list"):
-            return
-        for index in range(self.location_list.count()):
-            oge = self.location_list.item(index)
-            konum_id = oge.data(32)
-            secili = oge.checkState() == 2
-            if secili:
-                self.services.catalog.add_product_location(self.product_id, konum_id)
-            else:
-                self.services.catalog.remove_product_location(self.product_id, konum_id)
+            return None
+        return [
+            self.location_list.item(i).data(VERI_ROLU)
+            for i in range(self.location_list.count())
+            if self.location_list.item(i).checkState() == Qt.CheckState.Checked
+        ]
 
     def _initial_stock(self) -> int | None:
         """Boş = bilinmiyor ("Henüz Sayılmadı"); 0 = saydım, gerçekten sıfır."""

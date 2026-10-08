@@ -235,6 +235,44 @@ class CatalogService:
                 (now, product_id, location_id),
             )
 
+    def set_locations(self, product_id: int, location_ids: list[int],
+                      conn: sqlite3.Connection | None = None) -> None:
+        """Ürünün bulunduğu yerleri listeye eşitler; ESAS RAFI KORUR.
+
+        V1.1'de düzenleme penceresi her kayıtta esas rafı siliyordu (D-09):
+        var olan yerleşime dokunulmaz, yalnızca çıkarılanlar kapatılır ve
+        yeniler eklenir. Toplam stok DEĞİŞMEZ.
+        """
+        now = now_utc()
+
+        def _uygula(c: sqlite3.Connection) -> None:
+            istenen = set(location_ids)
+            mevcut = {
+                r["location_id"] for r in c.execute(
+                    "SELECT location_id FROM product_locations "
+                    " WHERE product_id = ? AND active = 1", (product_id,),
+                ).fetchall()
+            }
+            for konum in mevcut - istenen:
+                c.execute(
+                    "UPDATE product_locations SET active = 0, is_primary = 0, "
+                    "  deactivated_at_utc = ? WHERE product_id = ? AND location_id = ? "
+                    "  AND active = 1",
+                    (now, product_id, konum),
+                )
+            for konum in istenen - mevcut:
+                c.execute(
+                    "INSERT INTO product_locations(product_id, location_id, is_primary, "
+                    "  active_from_utc) VALUES(?,?,0,?)",
+                    (product_id, konum, now),
+                )
+
+        if conn is not None:
+            _uygula(conn)
+        else:
+            with self.db.transaction() as own:
+                _uygula(own)
+
     def set_primary_location(self, product_id: int, location_id: int | None) -> None:
         now = now_utc()
         with self.db.transaction() as conn:

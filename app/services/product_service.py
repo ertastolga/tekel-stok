@@ -24,6 +24,14 @@ from app.core.tr import normalize_name, search_matches
 
 log = logging.getLogger(__name__)
 
+#: ``update`` ile değiştirilebilen sütunlar (beyaz liste). Fiyat
+#: ``set_price``, stok defterden, durum ``set_active`` ile değişir.
+_DUZENLENEBILIR = frozenset({
+    "name", "brand_id", "category_id", "family_id", "unit_label", "package_type",
+    "size_value", "size_unit", "vat_rate", "min_stock", "critical_stock",
+    "default_supplier_id", "notes",
+})
+
 #: "Benzer Üründen Oluştur" bu alanları kopyalar. Barkod, ad, boyut ve fiyat
 #: KOPYALANMAZ — onlar ürünü ayıran şeylerdir.
 _CLONE_FIELDS = (
@@ -93,6 +101,7 @@ class ProductService:
         only_active: bool = True,
         limit: int = 200,
         offset: int = 0,
+        only_inactive: bool = False,
     ) -> list[sqlite3.Row]:
         """Filtreli ürün araması — DAİMA sayfalı.
 
@@ -101,7 +110,9 @@ class ProductService:
         """
         where = []
         params: list = []
-        if only_active:
+        if only_inactive:
+            where.append("p.is_active = 0")
+        elif only_active:
             where.append("p.is_active = 1")
         if category_id is not None:
             ids = self.catalog.descendant_category_ids(category_id)
@@ -410,8 +421,15 @@ class ProductService:
 
     # ===================== Güncelleme ====================================
     def update(self, product_id: int, **fields) -> None:
-        """Ürün alanlarını günceller. Fiyat için ``set_price`` kullanılır."""
+        """Ürün alanlarını günceller (beyaz liste) ve DEĞİŞENLERİ denetime yazar.
+
+        Fiyat için ``set_price`` kullanılır; ``sale_price`` burada yok sayılır.
+        Listede olmayan bir alan ``ValueError`` verir (programcı hatası).
+        """
         fields.pop("sale_price", None)
+        bilinmeyen = set(fields) - _DUZENLENEBILIR
+        if bilinmeyen:
+            raise ValueError(f"düzenlenemeyen alan(lar): {sorted(bilinmeyen)}")
         if not fields:
             return
         if "name" in fields:
@@ -419,14 +437,127 @@ class ProductService:
             if not name:
                 raise GecersizUrunAdi()
             fields["name"] = name
-            fields["name_norm"] = normalize_name(name)
-        fields["updated_at_utc"] = now_utc()
-        atama = ", ".join(f"{k} = ?" for k in fields)
         with self.db.transaction() as conn:
+            eski = conn.execute(
+                "SELECT * FROM products WHERE id = ?", (product_id,)
+            ).fetchone()
+            if eski is None:
+                raise ValueError(f"Ürün yok: {product_id}")
+            fark = {
+                alan: [eski[alan], deger] for alan, deger in fields.items()
+                if eski[alan] != deger
+            }
+            if not fark:
+                return
+            yazilacak = {alan: fields[alan] for alan in fark}
+            if "name" in yazilacak:
+                yazilacak["name_norm"] = normalize_name(yazilacak["name"])
+            yazilacak["updated_at_utc"] = now_utc()
+            atama = ", ".join(f"{k} = ?" for k in yazilacak)
             conn.execute(
                 f"UPDATE products SET {atama} WHERE id = ?",
-                [*fields.values(), product_id],
+                [*yazilacak.values(), product_id],
             )
+            self.audit.record(
+                "URUN_DUZENLE", f"{fields.get('name', eski['name'])} düzenlendi "
+                f"({', '.join(sorted(fark))}).",
+                "product", product_id, details=fark, conn=conn,
+            )
+
+    def save_edit(
+        self,
+        product_id: int,
+        fields: dict,
+        sale_price: int | None = None,
+        brand_name: str | None = None,
+        family_name: str | None = None,
+        tags: list[str] | None = None,
+        location_ids: list[int] | None = None,
+        barcode_adds: list[tuple[str, str, int]] | None = None,
+        barcode_removals: list[int] | None = None,
+        reference_cost: int | None | object = ...,
+    ) -> None:
+        """Düzenleme penceresinin TAMAMINI tek işlemde kaydeder (D-09).
+
+        Marka/aile kaydı, alanlar, fiyat (geçmişe yazılır), etiketler,
+        yerleşimler (esas raf korunur), barkod ekleme/kaldırma ve referans alış
+        fiyatı ya hep birlikte olur ya hiçbiri. Pencerede "Vazgeç" hiçbir şeyi
+        değiştirmez çünkü bu çağrı yapılmaz.
+        """
+        with self.db.transaction() as conn:
+            alanlar = dict(fields)
+            if brand_name is not None:
+                alanlar["brand_id"] = self.catalog.ensure_brand(brand_name)
+            if family_name is not None:
+                alanlar["family_id"] = self.catalog.ensure_family(family_name)
+            self.update(product_id, **alanlar)
+            if sale_price is not None:
+                self.set_price(product_id, sale_price)
+            if tags is not None:
+                etiket_idleri = [self.catalog.ensure_tag(t) for t in tags if t.strip()]
+                conn.execute("DELETE FROM product_tags WHERE product_id = ?", (product_id,))
+                conn.executemany(
+                    "INSERT INTO product_tags(product_id, tag_id) VALUES(?,?)",
+                    [(product_id, t) for t in dict.fromkeys(e for e in etiket_idleri if e)],
+                )
+            if location_ids is not None:
+                self.catalog.set_locations(product_id, location_ids, conn=conn)
+            for barkod_id in barcode_removals or []:
+                conn.execute(
+                    "UPDATE product_barcodes SET active = 0, deactivated_at_utc = ? "
+                    " WHERE id = ? AND product_id = ? AND active = 1",
+                    (now_utc(), barkod_id, product_id),
+                )
+            for barkod, tur, carpan in barcode_adds or []:
+                self.barcodes.add_barcode(product_id, barkod, tur, carpan, conn=conn)
+            if reference_cost is not ...:
+                if reference_cost is not None and int(reference_cost) < 0:
+                    raise GecersizFiyat("Alış fiyatı eksi olamaz.")
+                conn.execute(
+                    "UPDATE products SET reference_cost = ?, reference_cost_updated_at_utc = "
+                    "  CASE WHEN ? IS NULL THEN NULL ELSE ? END WHERE id = ? "
+                    "   AND IFNULL(reference_cost, -1) <> IFNULL(?, -1)",
+                    (reference_cost, reference_cost, now_utc(), product_id, reference_cost),
+                )
+
+    def move_to_category(self, product_ids: list[int], category_id: int | None) -> int:
+        """Toplu "Kategoriye taşı": tek işlem, tek denetim satırı."""
+        kimlikler = list(dict.fromkeys(int(p) for p in product_ids))
+        if not kimlikler:
+            return 0
+        if category_id is not None:
+            kategori = self.db.query_one(
+                "SELECT active FROM categories WHERE id = ?", (category_id,)
+            )
+            if kategori is None or not kategori["active"]:
+                raise KategoriGerekli()
+        yer = ",".join("?" * len(kimlikler))
+        with self.db.transaction() as conn:
+            sayi = conn.execute(
+                f"UPDATE products SET category_id = ?, updated_at_utc = ? "
+                f" WHERE id IN ({yer}) AND IFNULL(category_id, 0) <> IFNULL(?, 0)",
+                [category_id, now_utc(), *kimlikler, category_id],
+            ).rowcount
+            self.audit.record(
+                "URUN_TOPLU_KATEGORI", f"{sayi} ürünün kategorisi değiştirildi.",
+                "category", category_id, details={"urunler": kimlikler}, conn=conn,
+            )
+            return sayi
+
+    def first_barcodes(self, product_ids: list[int]) -> dict[int, str]:
+        """Liste ekranı için her ürünün ilk etkin barkodu (TEK sorgu)."""
+        if not product_ids:
+            return {}
+        yer = ",".join("?" * len(product_ids))
+        sonuc: dict[int, str] = {}
+        for satir in self.db.query(
+            f"SELECT product_id, barcode_norm FROM product_barcodes "
+            f" WHERE active = 1 AND product_id IN ({yer}) "
+            f" ORDER BY product_id, quantity_multiplier, id",
+            list(product_ids),
+        ):
+            sonuc.setdefault(satir["product_id"], satir["barcode_norm"])
+        return sonuc
 
     def set_price(self, product_id: int, new_price: int, reason: str = "") -> None:
         """Satış fiyatını değiştirir ve geçmişe kaydeder.
