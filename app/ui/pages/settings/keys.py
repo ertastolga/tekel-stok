@@ -52,6 +52,7 @@ AYAR_BOLUMU: dict[str, str] = {
     "scanner_burst_key_ms": "barkod",
     "scanner_min_length": "barkod",
     # İşletme (gün başlangıcı kuralı ayrı tabloda tutulur)
+    "shop_name": "isletme",
     "prices_include_vat": "isletme",
     "default_vat_rate": "isletme",
     # Stok

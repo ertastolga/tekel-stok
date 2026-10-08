@@ -35,22 +35,24 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSpinBox,
     QStackedWidget,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
+from app.core import gorunum as gorunum_mod
 from app.core import schema as schema_mod
 from app.core.clock import shift_days
 from app.core.errors import DomainError
-from app.core import gorunum as gorunum_mod
 from app.core.pricing_math import YUVARLAMA_ADIMLARI
-from app.core.tr import fmt_datetime
+from app.core.tr import fmt_date, fmt_datetime
 from app.services.security_service import ProtectedAction
 from app.ui import metrics, sound, theme
 from app.ui.dialogs.common_dialogs import ask_confirm, scanning_suspended, show_error, show_info
 from app.ui.pages.base import Page
 from app.ui.pages.settings.keys import BOLUMLER
-from app.ui.widgets.common import PageHeader, make_label
+from app.ui.widgets.common import PageHeader, make_label, setup_table, stretch_column
 
 log = logging.getLogger(__name__)
 
@@ -107,6 +109,7 @@ class SettingsPage(Page):
             "isletme": self._build_isletme,
             "stok": self._build_stok,
             "yedekleme": self._build_yedekleme,
+            "donanim": self._build_donanim,
             "guvenlik": self._build_guvenlik,
         }
         for kimlik, baslik in BOLUMLER:
@@ -520,6 +523,20 @@ class SettingsPage(Page):
     def _build_isletme(self) -> QWidget:
         icerik, duzen = self._bolum_kutusu()
 
+        dukkan = QGroupBox("İşletme")
+        d = QVBoxLayout(dukkan)
+        self.shop_edit = QLineEdit()
+        self.shop_edit.setMaxLength(80)
+        self.shop_edit.setProperty("scannerExempt", True)
+        self.shop_edit.setPlaceholderText("Örnek: Yıldız Tekel")
+        self.shop_edit.editingFinished.connect(
+            lambda: self._kaydet("shop_name", self.shop_edit.text().strip()))
+        self._kayit("shop_name", self.shop_edit,
+                    lambda: self.shop_edit.setText(self.services.settings.shop_name()))
+        d.addLayout(self._satir("Dükkân adı", self.shop_edit))
+        d.addWidget(self._hint("Pencere başlığında ve destek paketinde görünür."))
+        duzen.addWidget(dukkan)
+
         gun = QGroupBox("Gün başlangıcı")
         g = QVBoxLayout(gun)
         self.day_spin = QSpinBox()
@@ -532,6 +549,12 @@ class SettingsPage(Page):
             self.services.settings.current_business_day_start_hour()))
         g.addLayout(self._satir("Yeni gün saat kaçta başlasın", self.day_spin,
                                 self.day_button))
+        self.day_status = make_label("", "cardHint", wrap=True)
+        g.addWidget(self.day_status)
+        self.day_cancel_button = QPushButton("Bekleyen değişikliği iptal et")
+        self.day_cancel_button.clicked.connect(self._cancel_business_day)
+        g.addWidget(self.day_cancel_button)
+        self._yukleyiciler.append(self._gun_durumu)
         g.addWidget(self._hint(
             "Gece geç saate kadar açıksanız 04:00 seçebilirsiniz: gece yarısından "
             "sonraki satışlar bir önceki güne yazılır.\nBu değişiklik YARINDAN "
@@ -729,22 +752,92 @@ class SettingsPage(Page):
                 "uygulamayı kapatıp açabilirsiniz.",
             )
 
+    def _gun_durumu(self) -> None:
+        """Şu anki ve (varsa) bekleyen gün başlangıcı — hiçbiri gizli kalmaz."""
+        ayar = self.services.settings
+        simdi = ayar.current_business_day_start_hour()
+        bekleyen = ayar.pending_business_day_rule()
+        metin = f"Şu an: yeni gün {simdi:02d}:00'da başlıyor."
+        if bekleyen:
+            metin += (f" Bekleyen değişiklik: {fmt_date(bekleyen[0])} tarihinden itibaren "
+                      f"{bekleyen[1]:02d}:00.")
+        self.day_status.setText(metin)
+        self.day_cancel_button.setVisible(bekleyen is not None)
+
     def _save_business_day(self) -> None:
-        """Kural GEÇERLİLİK TARİHLİDİR; geçmiş raporlar değişmez."""
+        """Kural GEÇERLİLİK TARİHLİDİR; geçmiş raporlar değişmez.
+
+        Bekleyen bir kural varken yeni değer SESSİZCE üzerine yazılmaz: soruda
+        hangi bekleyen değişikliğin değiştirileceği açıkça yazar.
+        """
         yarin = shift_days(self.services.settings.calendar().today(), 1)
+        bekleyen = self.services.settings.pending_business_day_rule()
+        ayrinti = (f"Bu kural {fmt_date(yarin)} tarihinden itibaren geçerli olur.\n"
+                   "Geçmiş günlerin raporları DEĞİŞMEZ.")
+        if bekleyen:
+            ayrinti = (f"Bekleyen değişiklik ({fmt_date(bekleyen[0])} tarihinden itibaren "
+                       f"{bekleyen[1]:02d}:00) bunun yerine geçecek.\n" + ayrinti)
         with scanning_suspended(self.main_window.router):
             onay = ask_confirm(
                 self,
                 f"Yeni gün {self.day_spin.value():02d}:00'da başlasın mı?",
-                f"Bu kural {yarin} tarihinden itibaren geçerli olur.\n"
-                "Geçmiş günlerin raporları DEĞİŞMEZ.",
+                ayrinti,
                 accept_text="Evet, uygula",
             )
         if not onay:
             return
+        if bekleyen and bekleyen[0] != yarin:
+            self.services.settings.cancel_pending_business_day_rules()
         self.services.settings.set_business_day_start_hour(self.day_spin.value(), yarin)
+        self._gun_durumu()
         with scanning_suspended(self.main_window.router):
-            show_info(self, "Gün başlangıcı", f"{yarin} tarihinden itibaren geçerli.")
+            show_info(self, "Gün başlangıcı", f"{fmt_date(yarin)} tarihinden itibaren "
+                                             "geçerli.")
+
+    def _cancel_business_day(self) -> None:
+        bekleyen = self.services.settings.pending_business_day_rule()
+        if bekleyen is None:
+            return
+        with scanning_suspended(self.main_window.router):
+            onay = ask_confirm(
+                self, "Bekleyen gün başlangıcı değişikliği iptal edilsin mi?",
+                f"{fmt_date(bekleyen[0])} tarihinden itibaren {bekleyen[1]:02d}:00 kuralı "
+                "silinir; bugünkü kural aynen sürer. Geçmiş raporlar değişmez.",
+                accept_text="Evet, iptal et",
+            )
+        if not onay:
+            return
+        self.services.settings.cancel_pending_business_day_rules()
+        self._gun_durumu()
+
+    # ===================== Donanım =======================================
+    def _build_donanim(self) -> QWidget:
+        icerik, duzen = self._bolum_kutusu()
+        kutu = QGroupBox("Bağlı cihazlar")
+        k = QVBoxLayout(kutu)
+        k.addWidget(self._hint(
+            "Bu liste YALNIZCA kanıtlanabilen durumu gösterir: cihazdan gerçek bir "
+            "işaret gelmedikçe hiçbir şey 'çalışıyor' görünmez."))
+        self.hardware_table = QTableWidget(0, 3)
+        setup_table(self.hardware_table, ["Cihaz", "Durum", "Açıklama"])
+        stretch_column(self.hardware_table, "Açıklama")
+        k.addWidget(self.hardware_table)
+        yenile = QPushButton("Yenile")
+        yenile.clicked.connect(self._donanim_doldur)
+        k.addWidget(yenile)
+        duzen.addWidget(kutu)
+        duzen.addStretch(1)
+        self._yukleyiciler.append(self._donanim_doldur)
+        return icerik
+
+    def _donanim_doldur(self) -> None:
+        from app.hardware.durum import DURUM_ADLARI
+
+        durumlar = self.services.hardware.durumlar()
+        self.hardware_table.setRowCount(len(durumlar))
+        for i, d in enumerate(durumlar):
+            for j, metin in enumerate((d.ad, DURUM_ADLARI[d.durum], d.aciklama)):
+                self.hardware_table.setItem(i, j, QTableWidgetItem(metin))
 
     # ===================== Yedekleme işlemleri ===========================
     def _fill_backups(self) -> None:

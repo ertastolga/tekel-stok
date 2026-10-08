@@ -665,6 +665,8 @@ DEFAULT_SETTINGS: dict[str, str] = {
     # en yüksek ortalama süre (15–60 ms) ve sonlandırıcısız en kısa uzunluk (4–14).
     "scanner_burst_key_ms": "30",
     "scanner_min_length": "6",
+    # --- İşletme ---
+    "shop_name": "",
     # --- Fiyat / vergi ---
     "prices_include_vat": "1",
     "default_vat_rate": "20",

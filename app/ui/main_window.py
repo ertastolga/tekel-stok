@@ -98,7 +98,7 @@ class MainWindow(QMainWindow):
         self._status_timer = None
         self._status_message = ""
 
-        self.setWindowTitle(f"{config.APP_NAME} {config.APP_VERSION}")
+        self._update_title()
         self.setMinimumSize(metrics.MIN_WINDOW_WIDTH, metrics.MIN_WINDOW_HEIGHT)
 
         # --- Merkezi okuyucu ---
@@ -107,6 +107,8 @@ class MainWindow(QMainWindow):
         self.router.on_blocked = self._on_scan_blocked
         self.router.on_duplicate = self._on_scan_duplicate
         self.scanner = ScannerService(self)
+        # Donanım durumu: okuyucu ancak gerçek bir okutma gelince 'çalışıyor'.
+        self.scanner.scanned.connect(self.services.hardware.okutma_kaydet)
         self.scanner.scanned.connect(self.router.dispatch)
 
         from app.ui.manager_guard import ManagerGuard
@@ -572,12 +574,19 @@ class MainWindow(QMainWindow):
         self.scanner.set_min_length(self.services.settings.get_int("scanner_min_length", 6))
         self.apply_nav_visibility()
         self._update_footer()
+        self._update_title()
         for sayfa in self.pages.hazir().values():
             if hasattr(sayfa, "apply_settings"):
                 try:
                     sayfa.apply_settings()
                 except Exception:
                     log.exception("Sayfa ayarları uygulanamadı: %s", sayfa.nav_key)
+
+    def _update_title(self) -> None:
+        """Pencere başlığı: uygulama, sürüm ve (girildiyse) dükkân adı."""
+        baslik = f"{config.APP_NAME} {config.APP_VERSION}"
+        dukkan = self.services.settings.shop_name()
+        self.setWindowTitle(f"{baslik} — {dukkan}" if dukkan else baslik)
 
     def request_restart(self) -> None:
         self.restarting = True

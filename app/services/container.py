@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from app import config
 from app.core.db import Database, open_database
 from app.hardware.customer_display import CustomerDisplayService
+from app.hardware.durum import HardwareStatusService
 from app.payments.service import PaymentService
 from app.services.analytics_service import AnalyticsService
 from app.services.audit_service import AuditService
@@ -55,6 +56,7 @@ class Services:
     security: SecurityService
     pricing: PricingService
     imports: ImportService
+    hardware: HardwareStatusService
 
     def close(self) -> None:
         self.display.close()
@@ -108,6 +110,7 @@ def build_services(db: Database) -> Services:
         security=security,
         pricing=pricing,
         imports=imports,
+        hardware=HardwareStatusService(display, payments),
     )
 
 

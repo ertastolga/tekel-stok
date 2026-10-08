@@ -239,6 +239,32 @@ class SettingsService:
     def current_business_day_start_hour(self) -> int:
         return self.calendar().start_hour_for(self.calendar().today())
 
+    def pending_business_day_rule(self) -> tuple[str, int] | None:
+        """Henüz başlamamış (yarın ya da sonrası) en yakın kural: (tarih, saat)."""
+        bugun = self.calendar().today()
+        satir = self.db.query_one(
+            "SELECT effective_from, start_hour FROM business_day_rules "
+            " WHERE effective_from > ? ORDER BY effective_from LIMIT 1", (bugun,))
+        return (satir["effective_from"], satir["start_hour"]) if satir else None
+
+    def cancel_pending_business_day_rules(self) -> int:
+        """Henüz başlamamış kuralları siler (hiçbir kayıt onlarla damgalanmadı).
+
+        Bugün ve geçmiş kurallara ASLA dokunulmaz: geçmiş raporlar değişmez.
+        """
+        bugun = self.calendar().today()
+        with self.db.transaction() as conn:
+            sayi = conn.execute(
+                "DELETE FROM business_day_rules WHERE effective_from > ?", (bugun,)
+            ).rowcount
+        self._calendar = None
+        if sayi:
+            log.info("Bekleyen %s iş günü kuralı iptal edildi", sayi)
+        return sayi
+
+    def shop_name(self) -> str:
+        return (self.get("shop_name", "") or "").strip()
+
     def set_business_day_start_hour(self, start_hour: int, effective_from: str) -> None:
         """Yeni bir iş günü kuralı ekler — GEÇMİŞİ DEĞİŞTİRMEZ.
 
