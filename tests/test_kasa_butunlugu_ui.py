@@ -214,6 +214,67 @@ def test_kapanista_bekleyen_sepet_yazilir_ve_acilista_sorulur(
         close_window(yeni, qapp)
 
 
+def test_acilista_kurtarma_sorusu_ana_pencere_gorununce_sorulur(
+    qapp, services, bira, onay, monkeypatch
+):
+    """M12d (verify_build kuru çalıştırması): açık sepet varken soru pencere
+    KURULURKEN, ana pencere görünmeden soruluyordu. Sahipsiz, görev çubuğunda
+    düğmesi olmayan bir kutu dükkân sahibine "uygulama açılmadı" gibi görünür
+    ve kutu başka pencerelerin arkasında kalabilir."""
+    sepet = services.cart.new_cart()
+    services.cart.add_product(sepet, bira, quantity=2)
+    services.cart.autosave(sepet)
+    assert len(_acik_taslaklar(services)) == 1
+
+    gorunur_mu = []
+    kayitli_exec = QMessageBox.exec
+
+    def exec_(kutu):
+        gorunur_mu.append(kutu.parentWidget().window().isVisible())
+        return kayitli_exec(kutu)
+
+    monkeypatch.setattr(QMessageBox, "exec", exec_)
+
+    onay.cevap = True
+    win = MainWindow(services)                      # açılış sayfası: Sepetli Satış
+    try:
+        assert win._current_key == "sepetli_satis"
+        assert onay.sorular == [], "pencere görünmeden soru sorulmamalı"
+        win.show()
+        qapp.processEvents()
+        assert [s for s in onay.sorular if "Tamamlanmamış bir sepet" in s] == [
+            "Tamamlanmamış bir sepet bulundu."
+        ], "pencere görününce bir kez sorulur"
+        assert gorunur_mu == [True]
+        assert win.pages["sepetli_satis"].cart.item_count == 2
+        win.go_to("urunler")
+        win.go_to("sepetli_satis")
+        qapp.processEvents()
+        assert len(onay.sorular) == 1, "kurtarılan sepet yeniden sorulmaz"
+    finally:
+        close_window(win, qapp)
+
+
+def test_acilista_kurtarma_beklerken_baska_sayfaya_gecilirse_sorulmaz(
+    qapp, services, bira, onay
+):
+    sepet = services.cart.new_cart()
+    services.cart.add_product(sepet, bira)
+    services.cart.autosave(sepet)
+    win = MainWindow(services)
+    try:
+        win.go_to("urunler")                        # görünmeden önce sayfa değişti
+        win.show()
+        qapp.processEvents()
+        assert onay.sorular == [], "soru yalnızca kasa ekranındayken sorulur"
+        assert len(_acik_taslaklar(services)) == 1, "taslak kaybolmaz"
+        win.go_to("sepetli_satis")
+        qapp.processEvents()
+        assert any("Tamamlanmamış bir sepet" in s for s in onay.sorular)
+    finally:
+        close_window(win, qapp)
+
+
 def test_eksiyle_bosaltilan_sepet_hayalet_taslak_birakmaz(sayfa, qapp, services, bira):
     sayfa.handle_scan(ScanEvent(code=BIRA))
     sayfa._autosave_timer.timeout.emit()

@@ -18,7 +18,7 @@ import base64
 import logging
 from collections.abc import Mapping
 
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -108,6 +108,8 @@ class MainWindow(QMainWindow):
         self._status_message = ""
         #: Kasa dışı sayfaların kaydırma kapları (nav_key → QScrollArea).
         self._sayfa_kaplari: dict[str, QScrollArea] = {}
+        #: Ana pencere ilk kez ekrana gelince çalışacak işler (bkz. gorununce).
+        self._gorununce: list = []
 
         self._update_title()
         self.setMinimumSize(metrics.MIN_WINDOW_WIDTH, metrics.MIN_WINDOW_HEIGHT)
@@ -496,6 +498,33 @@ class MainWindow(QMainWindow):
         if self._current_key is None:
             return None
         return self.pages[self._current_key]
+
+    def gorununce(self, is_) -> None:
+        """``is_``'i ana pencere görünürken çalıştırır: şimdi ya da ilk gösterimde.
+
+        Açılışta sayfa, pencere KURULURKEN etkinleşir. O anda açılan bir soru
+        kutusu görünmeyen pencereye bağlı kalır: görev çubuğunda düğmesi olmaz,
+        başka pencerelerin arkasında kaybolabilir ve dükkân sahibine "uygulama
+        açılmadı" gibi görünür (M12d, verify_build kuru çalıştırması).
+        """
+        if self.isVisible():
+            is_()
+        elif is_ not in self._gorununce:
+            self._gorununce.append(is_)
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        if self._gorununce:
+            # Bir sonraki olay turunda: pencere önce ekrana gelsin.
+            QTimer.singleShot(0, self, self._gorununce_calistir)
+
+    def _gorununce_calistir(self) -> None:
+        isler, self._gorununce = self._gorununce, []
+        for is_ in isler:
+            try:
+                is_()
+            except Exception:
+                log.exception("Pencere görününce yapılacak iş çalıştırılamadı")
 
     def _go_back(self) -> None:
         """Esc: önce açık katmanı kapatır; yoksa ana ekrana döner."""

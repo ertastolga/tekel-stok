@@ -297,7 +297,13 @@ class CartSalePage(KatmanSahibi, Page):
     def on_activated(self) -> None:
         self.focus_keeper.start()
         self.barcode.setFocus()
-        self._offer_draft_recovery()
+        # Açılışta pencere henüz görünmüyor: soru ana pencere ekrana gelince ve
+        # kasiyer hâlâ bu ekrandaysa sorulur (sahipsiz soru kutusu olmaz).
+        self.main_window.gorununce(self._acilista_kurtarma)
+
+    def _acilista_kurtarma(self) -> None:
+        if self.main_window.current_page() is self:
+            self._offer_draft_recovery()
         self._render()
         self._refresh_parked_count()
         self._show_ready()
