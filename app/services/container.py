@@ -31,6 +31,7 @@ from app.services.security_service import SecurityService
 from app.services.session_grouping_service import SessionGroupingService
 from app.services.settings_service import SettingsService
 from app.services.supplier_service import SupplierService
+from app.services.system_status import SystemStatusService
 
 
 @dataclass
@@ -57,6 +58,7 @@ class Services:
     pricing: PricingService
     imports: ImportService
     hardware: HardwareStatusService
+    system_status: SystemStatusService
 
     def close(self) -> None:
         self.display.close()
@@ -88,6 +90,7 @@ def build_services(db: Database) -> Services:
     # Odeme ve musteri ekrani: veritabani bilmeyen, degistirilebilir adaptorler.
     payments = PaymentService()
     display = CustomerDisplayService()
+    hardware = HardwareStatusService(display, payments)
     return Services(
         db=db,
         settings=settings,
@@ -110,7 +113,8 @@ def build_services(db: Database) -> Services:
         security=security,
         pricing=pricing,
         imports=imports,
-        hardware=HardwareStatusService(display, payments),
+        hardware=hardware,
+        system_status=SystemStatusService(db, settings, backup, hardware),
     )
 
 

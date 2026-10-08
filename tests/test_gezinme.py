@@ -28,7 +28,7 @@ BEKLENEN = {
     "kasa": ["sepetli_satis", "hizli_satis", "fiyat_kontrol"],
     "stok": ["hizli_stok", "stok_girisi", "stok_sayimi", "stok_durumu"],
     "yonetim": ["panel", "urunler", "kategoriler", "fiyatlar", "ice_aktar", "tedarikciler",
-                "gecmis", "ayarlar", "barkod_testi"],
+                "gecmis", "ayarlar", "sistem_durumu", "barkod_testi"],
 }
 
 
@@ -174,7 +174,7 @@ def test_sayfalar_ilk_gosterildiklerinde_kurulur(qapp, services, bira):
     win = MainWindow(services)
     try:
         assert set(win.pages.hazir()) == {"sepetli_satis"}
-        assert "ayarlar" in win.pages and len(win.pages) == 17
+        assert "ayarlar" in win.pages and len(win.pages) == 18
         win.apply_settings()
         assert set(win.pages.hazir()) == {"sepetli_satis"}
         win.go_to("hizli_satis")

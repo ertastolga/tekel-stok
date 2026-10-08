@@ -236,6 +236,7 @@ class MainWindow(QMainWindow):
         from app.ui.pages.stock_entry import StockEntryPage
         from app.ui.pages.stock_status import StockStatusPage
         from app.ui.pages.suppliers import SuppliersPage
+        from app.ui.pages.system_status import SystemStatusPage
 
         # Menüdeki sıra bu listedir (grup içinde).
         sinifler = [
@@ -246,7 +247,7 @@ class MainWindow(QMainWindow):
             QuickStockPage, StockEntryPage, StockCountPage, StockStatusPage,
             # YÖNETİM
             DashboardPage, ProductsPage, CategoriesPage, PricesPage, ImportPage,
-            SuppliersPage, HistoryPage, SettingsPage, BarcodeTestPage,
+            SuppliersPage, HistoryPage, SettingsPage, SystemStatusPage, BarcodeTestPage,
         ]
 
         self.pages = TembelSayfalar(
