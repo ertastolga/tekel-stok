@@ -18,9 +18,10 @@ import base64
 import logging
 from collections.abc import Mapping
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QHBoxLayout,
     QLabel,
@@ -34,6 +35,7 @@ from PySide6.QtWidgets import (
 )
 
 from app import config
+from app.core import clock
 from app.core.money import format_tl
 from app.scanner.scan_router import ScanRouter
 from app.scanner.scanner_service import ScannerService
@@ -42,6 +44,12 @@ from app.ui import metrics, shortcuts, sound, theme
 from app.ui.widgets.common import make_label
 
 log = logging.getLogger(__name__)
+
+#: Boşta yedek denemesi aralığı ve "boşta" sayılmak için gereken sessizlik.
+BOSTA_YEDEK_ARALIK_MS = 5 * 60 * 1000
+BOSTA_SANIYE = 60
+_ETKINLIK_OLAYLARI = (QEvent.Type.KeyPress, QEvent.Type.MouseButtonPress,
+                      QEvent.Type.TouchBegin, QEvent.Type.Wheel)
 
 class TembelSayfalar(Mapping):
     """Sayfalar İLK gösterildiklerinde kurulur (açılış süresi ve bellek).
@@ -123,6 +131,7 @@ class MainWindow(QMainWindow):
 
         self.scanner.start()
         self.guard.start()
+        self._yedekleme_kur()
         self.go_to(self._landing_key())
 
     # ===================== Kurulum =======================================
@@ -156,6 +165,11 @@ class MainWindow(QMainWindow):
         self.statusBar().addWidget(self.status_label, 1)
         self.today_label = QLabel("")
         self.statusBar().addPermanentWidget(self.today_label)
+        #: Son yedek denemesi başarısızsa kalıcı uyarı (sonraki başarılı yedekte kalkar).
+        self.backup_warning = QLabel("⚠ Son yedek alınamadı — Sistem Durumu'na bakın")
+        self.backup_warning.setObjectName("backupWarning")
+        self.statusBar().addPermanentWidget(self.backup_warning)
+        self._yedek_uyarisini_guncelle()
 
     def _build_nav(self) -> QWidget:
         rail = QWidget()
@@ -588,6 +602,63 @@ class MainWindow(QMainWindow):
         dukkan = self.services.settings.shop_name()
         self.setWindowTitle(f"{baslik} — {dukkan}" if dukkan else baslik)
 
+    # ===================== Boşta yedek (M10b) ============================
+    def _yedekleme_kur(self) -> None:
+        """Günlük/otomatik yedek fırsatı: 5 dakikada bir, ancak BOŞTAYKEN."""
+        from PySide6.QtCore import QTimer
+
+        self._son_etkinlik = clock.monotonic()
+        self._yedek_zamanlayici = QTimer(self)
+        self._yedek_zamanlayici.setInterval(BOSTA_YEDEK_ARALIK_MS)
+        self._yedek_zamanlayici.timeout.connect(self.bosta_yedek_dene)
+        self._yedek_zamanlayici.start()
+        uygulama = QApplication.instance()
+        if uygulama is not None:
+            uygulama.installEventFilter(self)
+
+    def eventFilter(self, nesne, olay) -> bool:  # noqa: N802
+        if olay.type() in _ETKINLIK_OLAYLARI:
+            self._son_etkinlik = clock.monotonic()
+        return False
+
+    def bosta_yedek_dene(self) -> str | None:
+        """Koşullar uygunsa günlük ve (zamanı geldiyse) otomatik yedeği alır.
+
+        Koşullar: yeniden başlatma yok, en az 60 sn kullanıcı/okuyucu etkinliği
+        yok, açık işlem yok, görünen sayfa uygun (ödeme/katman açık değil).
+        Hata satışı engellemez: kaydedilir, durum çubuğunda uyarı görünür.
+        """
+        try:
+            if self.restarting or self.services.db.in_transaction:
+                return None
+            if clock.monotonic() - self._son_etkinlik < BOSTA_SANIYE:
+                return None
+            sayfa = self.current_page()
+            if sayfa is not None and not sayfa.yedek_icin_uygun():
+                return None
+            sonuc = None
+            try:
+                if self.services.backup.create_daily() is not None:
+                    sonuc = "GUNLUK"
+                if self.services.backup.maybe_auto_backup() is not None:
+                    sonuc = sonuc or "OTOMATIK"
+            except Exception:
+                log.exception("Boşta yedek alınamadı")
+            return sonuc
+        except Exception:
+            log.exception("Boşta yedek denetimi başarısız")
+            return None
+        finally:
+            self._yedek_uyarisini_guncelle()
+
+    def _yedek_uyarisini_guncelle(self) -> None:
+        try:
+            hata = self.services.backup.last_error()
+            son = self.services.settings.get_int("last_backup_at_utc", 0)
+            self.backup_warning.setVisible(bool(hata) and hata[0] >= son)
+        except Exception:
+            log.exception("Yedek uyarısı güncellenemedi")
+
     def request_restart(self) -> None:
         self.restarting = True
         if self.restart_callback is not None:
@@ -631,4 +702,8 @@ class MainWindow(QMainWindow):
         self._save_geometry()
         self.scanner.stop()
         self.guard.stop()
+        self._yedek_zamanlayici.stop()
+        uygulama = QApplication.instance()
+        if uygulama is not None:
+            uygulama.removeEventFilter(self)
         super().closeEvent(event)

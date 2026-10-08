@@ -239,12 +239,8 @@ def main(argv: list[str] | None = None) -> int:
     except Exception:
         log.exception("Saat kontrolü yapılamadı")
 
-    try:
-        alinan = services.backup.maybe_auto_backup()
-        if alinan:
-            log.info("Otomatik yedek alındı: %s", alinan)
-    except Exception:
-        log.exception("Otomatik yedek alınamadı")
+    # Açılış: günlük yedek fırsatı (göçten sonra, pencereden önce).
+    yedek_firsati(services, "açılış")
 
     # --- Ana pencere ---
     from app.ui.main_window import MainWindow
@@ -263,10 +259,10 @@ def main(argv: list[str] | None = None) -> int:
     cikis = app.exec()
 
     # --- Kapanış ---
-    try:
-        services.backup.maybe_auto_backup()
-    except Exception:
-        log.exception("Kapanışta yedek alınamadı")
+    # Gün boyu hiç boşta kalınmadıysa günlük yedek burada alınır. Geri yükleme
+    # ya da görünüm için yeniden başlatılıyorsa alınmaz (açılışta alınır).
+    if not pencere.restarting:
+        yedek_firsati(services, "kapanış")
     try:
         services.db.stamp_clock()
     except Exception:
@@ -281,6 +277,26 @@ def main(argv: list[str] | None = None) -> int:
         _restart_process()
     log.info("Uygulama kapatıldı (kod %s)", cikis)
     return cikis
+
+
+def yedek_firsati(services, asama: str) -> list:
+    """Açılış/kapanış yedek fırsatı: gerekiyorsa günlük, zamanı geldiyse otomatik.
+
+    Hiçbir hata uygulamayı durdurmaz; yedek servisi hatayı kaydeder ve durum
+    çubuğunda uyarı görünür (M10b).
+    """
+    alinanlar = []
+    for ad, islem in (("günlük", services.backup.create_daily),
+                      ("otomatik", services.backup.maybe_auto_backup)):
+        try:
+            yol = islem()
+        except Exception:
+            log.exception("%s yedeği (%s) alınamadı", ad.capitalize(), asama)
+            continue
+        if yol is not None:
+            log.info("%s yedek alındı (%s): %s", ad.capitalize(), asama, yol)
+            alinanlar.append(yol)
+    return alinanlar
 
 
 def _pin_sifirla_calistir(services) -> bool:

@@ -64,6 +64,11 @@ class Page(QWidget):
     def handle_scan(self, event) -> None:
         """Merkezi yönlendiriciden gelen okutma. ``accepts_scans`` ile açılır."""
 
+    def yedek_icin_uygun(self) -> bool:
+        """Boşta yedek şimdi alınabilir mi? (Kasa sayfaları ödeme/katman
+        sırasında ``False`` döner; yedek ASLA satışı bekletmez.)"""
+        return True
+
     # -- Kolaylıklar ------------------------------------------------------
     def notify(self, message: str, seconds: int = 4) -> None:
         self.main_window.show_status(message, seconds)

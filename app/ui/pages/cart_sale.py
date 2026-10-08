@@ -299,6 +299,9 @@ class CartSalePage(KatmanSahibi, Page):
         self._refresh_parked_count()
         self._show_ready()
 
+    def yedek_icin_uygun(self) -> bool:
+        return not self._checkout_busy and self._overlay_state is None
+
     def on_deactivated(self) -> None:
         # Açık katman "vazgeç" anlamıyla kapanır ve okutma askısını bırakır;
         # bağlam ANCAK bundan sonra değişir.
