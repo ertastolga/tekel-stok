@@ -292,6 +292,25 @@ class SettingsPage(Page):
             self.sale_mode_combo, self.services.settings.default_sale_mode()))
         s.addLayout(self._satir("Stok Takibi kipinde açılan satış ekranı",
                                 self.sale_mode_combo))
+        self.startup_combo = QComboBox()
+        for etiket, deger in (
+            ("Otomatik (çalışma kipine göre)", "AUTO"),
+            ("🛒 Sepetli Satış", "sepetli_satis"),
+            ("⚡ Hızlı Satış", "hizli_satis"),
+            ("🏠 Ana Ekran", "ana_ekran"),
+        ):
+            self.startup_combo.addItem(etiket, deger)
+        self.startup_combo.currentIndexChanged.connect(
+            lambda _=0: self._kaydet("startup_page", self.startup_combo.currentData(),
+                                     uygula=False)
+        )
+        self._kayit("startup_page", self.startup_combo, lambda: self._combo_yukle(
+            self.startup_combo, self.services.settings.startup_page()))
+        s.addLayout(self._satir("Uygulama açılınca gelen ekran", self.startup_combo))
+        self.card_check = self._check(
+            "show_card_button", "KART düğmesini göster (NAKİT her zaman görünür)"
+        )
+        s.addWidget(self.card_check)
         self.quick_sale_check = self._check(
             "show_quick_sale", "Hızlı Satış ekranını göster (menü, Ana Ekran, F1)"
         )

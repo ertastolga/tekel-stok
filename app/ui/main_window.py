@@ -310,6 +310,10 @@ class MainWindow(QMainWindow):
         INVENTORY_TRACKED: V1 davranışı korunur (Ana Ekran).
         """
         try:
+            secim = self.services.settings.startup_page()
+            if secim != "AUTO":
+                # Gizlenmiş Hızlı Satış açılış ekranı olamaz: birincil kasaya düş.
+                return "sepetli_satis" if secim in self._hidden_pages() else secim
             if self.services.settings.is_sales_first():
                 return "sepetli_satis"
             if self.services.settings.default_sale_mode() == "SEPET":

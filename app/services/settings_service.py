@@ -90,6 +90,16 @@ class SettingsService:
 
         return self.operating_mode() == OperatingMode.SALES_FIRST
 
+    #: ``startup_page`` için geçerli değerler.
+    ACILIS_SAYFALARI = ("AUTO", "sepetli_satis", "hizli_satis", "ana_ekran")
+
+    def startup_page(self) -> str:
+        deger = self.get("startup_page", "AUTO")
+        return deger if deger in self.ACILIS_SAYFALARI else "AUTO"
+
+    def show_card_button(self) -> bool:
+        return self.get_bool("show_card_button", True)
+
     def show_quick_sale(self) -> bool:
         """Hızlı Satış menüde / Ana Ekran'da / F1 ile erişilebilir mi?"""
         return self.get_bool("show_quick_sale", True)

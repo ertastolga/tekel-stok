@@ -670,6 +670,10 @@ DEFAULT_SETTINGS: dict[str, str] = {
     # --- Kasa (V1.2) ---
     # Hızlı Satış gizlenebilir (menü, Ana Ekran kartı, F1).
     "show_quick_sale": "1",
+    # Açılış ekranı: AUTO (kipe göre) | sepetli_satis | hizli_satis | ana_ekran.
+    "startup_page": "AUTO",
+    # KART düğmesi gizlenebilir (yalnızca nakit çalışan dükkân); NAKİT daima var.
+    "show_card_button": "1",
     # NAKİT'te para üstü hesaplayıcısı (F4). Kapalıyken NAKİT tek dokunuştur.
     "cash_change_calculator": "0",
     # --- Arayüz ---

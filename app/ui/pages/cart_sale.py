@@ -170,6 +170,8 @@ class CartSalePage(KatmanSahibi, Page):
         """Hızlı Satış kapalıysa ona giden düğme de görünmez."""
         try:
             self.mode_button.setVisible(self.services.settings.show_quick_sale())
+            # NAKİT daima vardır; KART gizlenebilir (VERESİYE / DİĞER sunulmaz).
+            self.card_button.setVisible(self.services.settings.show_card_button())
         except Exception:
             log.exception("Kasa ayarları uygulanamadı")
 

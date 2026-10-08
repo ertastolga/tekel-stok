@@ -26,6 +26,8 @@ AYAR_BOLUMU: dict[str, str] = {
     "operating_mode": "kasa",
     "default_sale_mode": "kasa",
     "show_quick_sale": "kasa",
+    "startup_page": "kasa",
+    "show_card_button": "kasa",
     "cash_change_calculator": "kasa",
     "pack_confirm_in_sale": "kasa",
     "customer_display_hold_ms": "kasa",
