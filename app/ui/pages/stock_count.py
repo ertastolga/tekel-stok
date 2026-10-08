@@ -51,7 +51,7 @@ log = logging.getLogger(__name__)
 class StockCountPage(Page):
     nav_title = "📋  Stok Sayımı"
     nav_key = "stok_sayimi"
-    nav_group = "gunluk"
+    nav_group = "stok"
     accepts_scans = True
     completes_with_shortcut = True     # F10 = "Sayimi Bitir" (mevcut davranis)
 

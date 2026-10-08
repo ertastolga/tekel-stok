@@ -308,6 +308,12 @@ QDialog, QMessageBox {{ background: {t.bg}; }}
     color: {t.nav_group}; font-size: {m.FONT_SMALL_PT}pt; font-weight: 600;
     padding: 14px 14px 4px 14px;
 }}
+QPushButton#navGroupHeader {{
+    background: transparent; color: {t.nav_group}; border: none;
+    text-align: left; font-size: {m.FONT_SMALL_PT}pt; font-weight: 600;
+    padding: 12px 14px 4px 14px; min-height: 28px;
+}}
+QPushButton#navGroupHeader:hover {{ color: {t.on_accent}; }}
 #navButton {{
     background: transparent; color: {t.nav_text}; border: none;
     text-align: left; padding: 11px 14px; border-radius: 6px;

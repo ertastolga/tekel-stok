@@ -90,6 +90,21 @@ class SettingsService:
 
         return self.operating_mode() == OperatingMode.SALES_FIRST
 
+    def show_quick_sale(self) -> bool:
+        """Hızlı Satış menüde / Ana Ekran'da / F1 ile erişilebilir mi?"""
+        return self.get_bool("show_quick_sale", True)
+
+    def nav_collapsed_groups(self) -> set[str]:
+        """Kapalı menü grupları. Ayarlanmamışsa kipe göre varsayılan."""
+        deger = self.get("nav_collapsed_groups", "VARSAYILAN")
+        if deger == "VARSAYILAN":
+            return {"stok"} if self.is_sales_first() else set()
+        return {g for g in deger.split(",") if g}
+
+    def set_nav_collapsed_groups(self, groups: set[str]) -> None:
+        """Defter tutma yazısı: veriyi "değişti" saymaz."""
+        self.set_many_quiet({"nav_collapsed_groups": ",".join(sorted(groups))})
+
     def customer_display_hold_ms(self) -> int:
         """Satıştan sonra son tutarın müşteri ekranında kalma süresi (ms)."""
         return max(0, min(30000, self.get_int("customer_display_hold_ms", 4000)))

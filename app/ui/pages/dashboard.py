@@ -50,7 +50,7 @@ GUN_KISA = ("Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz")
 
 
 class DashboardPage(Page):
-    nav_title = "📊  Bugün"
+    nav_title = "📊  Analiz"
     nav_key = "panel"
     nav_group = "yonetim"
 

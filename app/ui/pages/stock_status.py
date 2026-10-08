@@ -34,7 +34,7 @@ log = logging.getLogger(__name__)
 class StockStatusPage(Page):
     nav_title = "📈  Stok Durumu"
     nav_key = "stok_durumu"
-    nav_group = "yonetim"
+    nav_group = "stok"
 
     def __init__(self, services, main_window) -> None:
         super().__init__(services, main_window)

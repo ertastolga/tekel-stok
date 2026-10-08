@@ -1,7 +1,7 @@
 """Ana ekran: uygulamanın yüzü.
 
-Dükkân sahibi burada beş şey görür ve hepsini tek bakışta anlar. En sık
-kullanılan iş (Hızlı Satış) görsel olarak BASKINDIR.
+Kasa / Stok / Yönetim kartları, sol menüyle AYNI gruplar. Birincil iş
+(Sepetli Satış) görsel olarak BASKINDIR; Hızlı Satış Ayarlar'dan gizlenebilir.
 
 Bu ekran bilerek SADEDİR: analiz, uyarı yığını ve teknik terim yoktur.
 """
@@ -38,56 +38,62 @@ class HomePage(Page):
         )
         duzen.setSpacing(metrics.PAGE_SPACING)
 
-        # --- Günlük işlemler ---
-        duzen.addWidget(make_label("Günlük İşlemler", "sectionTitle"))
-        gunluk = QGridLayout()
-        gunluk.setSpacing(metrics.PAGE_SPACING)
+        # --- KASA ---
+        duzen.addWidget(make_label("Kasa", "sectionTitle"))
+        kasa = QGridLayout()
+        kasa.setSpacing(metrics.PAGE_SPACING)
 
-        self.quick_card = ActionCard(
-            "⚡", "Hızlı Satış",
-            "Barkodu okutun, ürün hemen satılsın. (F1)",
+        # Sepetli Satış BİRİNCİL iş akışıdır: en büyük kart.
+        self.cart_card = ActionCard(
+            "🛒", "Sepetli Satış",
+            "Ürünleri okutun, sonra NAKİT ya da KART'a dokunun. (F2)",
             primary=True,
         )
-        self.quick_card.clicked.connect(lambda: self.main_window.go_to("hizli_satis"))
-        gunluk.addWidget(self.quick_card, 0, 0, 2, 1)
-
-        self.cart_card = ActionCard(
-            "🛒", "Sepetli Satış", "Önce sepete ekleyin, sonra tamamlayın. (F2)"
-        )
         self.cart_card.clicked.connect(lambda: self.main_window.go_to("sepetli_satis"))
-        gunluk.addWidget(self.cart_card, 0, 1)
+        kasa.addWidget(self.cart_card, 0, 0, 2, 1)
 
+        self.quick_card = ActionCard(
+            "⚡", "Hızlı Satış", "Barkodu okutun, ürün hemen satılsın. (F1)"
+        )
+        self.quick_card.clicked.connect(lambda: self.main_window.go_to("hizli_satis"))
+        kasa.addWidget(self.quick_card, 0, 1)
+
+        self.today_card = ActionCard(
+            "📊", "Analiz", "Günün cirosu, ödemeler ve satış eğilimleri. (F7)"
+        )
+        self.today_card.clicked.connect(lambda: self.main_window.go_to("panel"))
+        kasa.addWidget(self.today_card, 1, 1)
+        kasa.setColumnStretch(0, 3)
+        kasa.setColumnStretch(1, 2)
+        duzen.addLayout(kasa, 3)
+
+        # --- STOK ---
+        duzen.addWidget(make_label("Stok", "sectionTitle"))
+        stok = QGridLayout()
+        stok.setSpacing(metrics.PAGE_SPACING)
         self.entry_card = ActionCard(
-            "📦", "Stok Girişi", "Gelen malı okutup stoğa ekleyin. (F3)"
+            "📦", "Mal Kabul", "Gelen malı okutup stoğa ekleyin. (F3)"
         )
         self.entry_card.clicked.connect(lambda: self.main_window.go_to("stok_girisi"))
-        gunluk.addWidget(self.entry_card, 0, 2)
-
+        stok.addWidget(self.entry_card, 0, 0)
         self.count_card = ActionCard(
             "📋", "Stok Sayımı", "Raf raf sayın, farkı düzeltin. (F9)"
         )
         self.count_card.clicked.connect(lambda: self.main_window.go_to("stok_sayimi"))
-        gunluk.addWidget(self.count_card, 1, 1)
+        stok.addWidget(self.count_card, 0, 1)
+        self.status_card = ActionCard("📈", "Stok Durumu", "Azalan ve kritik ürünler.")
+        self.status_card.clicked.connect(lambda: self.main_window.go_to("stok_durumu"))
+        stok.addWidget(self.status_card, 0, 2)
+        duzen.addLayout(stok, 2)
 
-        self.today_card = ActionCard(
-            "📊", "Bugün", "Günün cirosu ve dikkat edilecekler. (F7)"
-        )
-        self.today_card.clicked.connect(lambda: self.main_window.go_to("panel"))
-        gunluk.addWidget(self.today_card, 1, 2)
-
-        gunluk.setColumnStretch(0, 3)
-        gunluk.setColumnStretch(1, 2)
-        gunluk.setColumnStretch(2, 2)
-        duzen.addLayout(gunluk, 3)
-
-        # --- Yönetim ---
+        # --- YÖNETİM ---
         duzen.addWidget(make_label("Yönetim", "sectionTitle"))
         yonetim = QGridLayout()
         yonetim.setSpacing(10)
+        self.admin_cards: dict[str, ActionCard] = {}
         for sutun, (ikon, baslik, anahtar) in enumerate(
             (
                 ("🏷️", "Ürünler", "urunler"),
-                ("📈", "Stok Durumu", "stok_durumu"),
                 ("🚚", "Tedarikçiler", "tedarikciler"),
                 ("🕘", "Geçmiş", "gecmis"),
                 ("⚙️", "Ayarlar", "ayarlar"),
@@ -98,13 +104,21 @@ class HomePage(Page):
             kart.setMaximumHeight(90)
             kart.clicked.connect(lambda _=False, k=anahtar: self.main_window.go_to(k))
             yonetim.addWidget(kart, 0, sutun)
+            self.admin_cards[anahtar] = kart
         duzen.addLayout(yonetim, 1)
 
         kaydirma.setWidget(govde)
         self.root.addWidget(kaydirma, 1)
 
+    def apply_settings(self) -> None:
+        try:
+            self.quick_card.setVisible(self.services.settings.show_quick_sale())
+        except Exception:
+            pass
+
     def refresh(self) -> None:
         """Başlıkta günün özeti; ekranın geri kalanı sabit ve sakin kalır."""
+        self.apply_settings()
         try:
             ozet = self.services.analytics.today()
             dikkat = self.services.products.attention_counts()

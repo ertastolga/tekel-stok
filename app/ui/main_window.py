@@ -1,8 +1,13 @@
 """Ana pencere: gezinme, kısayollar ve merkezi okuyucu bağlantısı.
 
-Gezinme SIĞ ve TAHMİN EDİLEBİLİRDİR: iki başlıklı sol menü (Günlük İşlemler /
-Yönetim) ve bir ``QStackedWidget``. Menü de ana ekran da AYNI sayfalara gider;
-menü çubuğu ve iç içe menü YOKTUR.
+Gezinme SIĞ ve TAHMİN EDİLEBİLİRDİR: üç başlıklı sol menü (KASA / STOK /
+YÖNETİM) ve bir ``QStackedWidget``. Menü de ana ekran da AYNI sayfalara gider;
+menü çubuğu ve iç içe menü YOKTUR. Grup başlıkları açılıp kapanabilir (durum
+sessizce saklanır); gösterilen sayfanın grubu daima açıktır. Menü düğmeleri
+DAİMA kurulur, yalnızca görünürlükleri değişir.
+
+Girişte PIN isteyen sayfa (``gate_action``) için kapı, mevcut sayfa
+KAPATILMADAN önce denetlenir; ret hâlinde hiçbir şey değişmez.
 
 Okuyucu tek bir yerden bağlanır:
     ScannerService (olay süzgeci) -> ScanRouter -> etkin sayfa
@@ -38,7 +43,8 @@ from app.ui.widgets.common import make_label
 log = logging.getLogger(__name__)
 
 NAV_GROUPS = (
-    ("gunluk", "GÜNLÜK İŞLEMLER"),
+    ("kasa", "KASA"),
+    ("stok", "STOK"),
     ("yonetim", "YÖNETİM"),
 )
 
@@ -143,6 +149,8 @@ class MainWindow(QMainWindow):
         duzen.addWidget(self.nav_footer)
 
         self.nav_buttons: dict[str, QPushButton] = {}
+        self.nav_headers: dict[str, QPushButton] = {}
+        self.nav_page_group: dict[str, str] = {}
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
         return rail
@@ -161,12 +169,16 @@ class MainWindow(QMainWindow):
         from app.ui.pages.stock_status import StockStatusPage
         from app.ui.pages.suppliers import SuppliersPage
 
+        # Menüdeki sıra bu listedir (grup içinde).
         sinifler = [
             HomePage,
-            # Sepetli Satis BIRINCIL is akisidir; menude de once gelir.
-            CartSalePage, QuickSalePage, StockEntryPage, StockCountPage,
-            DashboardPage, ProductsPage, StockStatusPage, SuppliersPage,
-            HistoryPage, SettingsPage, BarcodeTestPage,
+            # KASA — Sepetli Satış BİRİNCİL iş akışıdır; menüde de önce gelir.
+            CartSalePage, QuickSalePage,
+            # STOK
+            StockEntryPage, StockCountPage, StockStatusPage,
+            # YÖNETİM
+            DashboardPage, ProductsPage, SuppliersPage, HistoryPage,
+            SettingsPage, BarcodeTestPage,
         ]
 
         self.pages: dict[str, object] = {}
@@ -187,10 +199,20 @@ class MainWindow(QMainWindow):
         for anahtar, baslik in NAV_GROUPS:
             if not gruplar[anahtar]:
                 continue
-            self.nav_layout.addWidget(make_label(baslik, "navGroup"))
+            baslik_dugmesi = QPushButton(baslik)
+            baslik_dugmesi.setObjectName("navGroupHeader")
+            baslik_dugmesi.setCursor(Qt.CursorShape.PointingHandCursor)
+            baslik_dugmesi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            baslik_dugmesi.clicked.connect(
+                lambda _=False, g=anahtar: self.toggle_nav_group(g)
+            )
+            self.nav_layout.addWidget(baslik_dugmesi)
+            self.nav_headers[anahtar] = baslik_dugmesi
             for sayfa in gruplar[anahtar]:
                 self._add_nav_button(sayfa.nav_key, sayfa.nav_title)
+                self.nav_page_group[sayfa.nav_key] = anahtar
         self.nav_layout.addStretch(1)
+        self.apply_nav_visibility()
 
     def _add_nav_button(self, key: str, title: str) -> None:
         dugme = QPushButton(title)
@@ -241,12 +263,81 @@ class MainWindow(QMainWindow):
             log.exception("Acilis sayfasi belirlenemedi")
         return "ana_ekran"
 
+    # ===================== Menü görünürlüğü ============================
+    def _collapsed_groups(self) -> set[str]:
+        try:
+            return self.services.settings.nav_collapsed_groups()
+        except Exception:
+            log.exception("Menü durumu okunamadı")
+            return set()
+
+    def apply_nav_visibility(self) -> None:
+        """Grup açık/kapalı durumu ve gizlenebilir sayfalar.
+
+        Gösterilen sayfanın grubu her zaman açıktır (kullanıcı nerede
+        olduğunu görür); bu, kayıtlı durumu DEĞİŞTİRMEZ.
+        """
+        kapali = self._collapsed_groups()
+        etkin_grup = self.nav_page_group.get(self._current_key or "")
+        gizli = self._hidden_pages()
+        for grup, baslik_dugmesi in self.nav_headers.items():
+            acik = grup not in kapali or grup == etkin_grup
+            ad = dict(NAV_GROUPS)[grup]
+            baslik_dugmesi.setText(f"{'▾' if acik else '▸'}  {ad}")
+            baslik_dugmesi.setProperty("acik", "evet" if acik else "hayir")
+            for anahtar, sayfa_grubu in self.nav_page_group.items():
+                if sayfa_grubu == grup:
+                    self.nav_buttons[anahtar].setVisible(acik and anahtar not in gizli)
+
+    def _hidden_pages(self) -> set[str]:
+        try:
+            return set() if self.services.settings.show_quick_sale() else {"hizli_satis"}
+        except Exception:
+            return set()
+
+    def toggle_nav_group(self, group: str) -> None:
+        kapali = set(self._collapsed_groups())
+        if group in kapali:
+            kapali.discard(group)
+        else:
+            kapali.add(group)
+        try:
+            self.services.settings.set_nav_collapsed_groups(kapali)
+        except Exception:
+            log.exception("Menü durumu yazılamadı")
+        self.apply_nav_visibility()
+
+    def _check_nav(self, key: str | None) -> None:
+        dugme = self.nav_buttons.get(key or "")
+        if dugme is not None:
+            dugme.setChecked(True)
+        elif self.nav_group.checkedButton() is not None:
+            self.nav_group.setExclusive(False)
+            self.nav_group.checkedButton().setChecked(False)
+            self.nav_group.setExclusive(True)
+
     def go_to(self, key: str) -> None:
         if key not in self.pages:
             return
         sayfa = self.pages[key]
         if self._current_key == key:
             sayfa.on_activated()
+            return
+        if key in self._hidden_pages():
+            # Gizlenmiş sayfa (ör. Hızlı Satış kapalı): kısayol sessizce
+            # boşa gitmez, ne olduğu söylenir.
+            self._check_nav(self._current_key)
+            self.show_status(
+                "Hızlı Satış kapalı. Açmak için: Ayarlar > Kasa.", 5
+            )
+            return
+
+        # PIN isteyen sayfa: kapı, mevcut sayfa KAPATILMADAN ÖNCE denetlenir
+        # (PIN penceresi okutma askısında açılır). Ret: hiçbir şey değişmez.
+        if getattr(sayfa, "gate_action", None) and not self.guard.require(
+            sayfa.gate_action, self
+        ):
+            self._check_nav(self._current_key)
             return
 
         if self._current_key is not None:
@@ -257,13 +348,8 @@ class MainWindow(QMainWindow):
 
         self.stack.setCurrentWidget(sayfa)
         self._current_key = key
-        dugme = self.nav_buttons.get(key)
-        if dugme is not None:
-            dugme.setChecked(True)
-        elif self.nav_group.checkedButton() is not None:
-            self.nav_group.setExclusive(False)
-            self.nav_group.checkedButton().setChecked(False)
-            self.nav_group.setExclusive(True)
+        self._check_nav(key)
+        self.apply_nav_visibility()
 
         # Kasa sayfası gösterilince yönetici kilidi kapanır.
         if getattr(sayfa, "kasa_sayfasi", False):
@@ -409,6 +495,13 @@ class MainWindow(QMainWindow):
         """Ayar değişikliklerini çalışan uygulamaya uygular."""
         sound.set_enabled(self.services.settings.sound_enabled())
         self.scan_guard.set_window(self.services.settings.duplicate_scan_ms())
+        self.apply_nav_visibility()
+        for sayfa in self.pages.values():
+            if hasattr(sayfa, "apply_settings"):
+                try:
+                    sayfa.apply_settings()
+                except Exception:
+                    log.exception("Sayfa ayarları uygulanamadı: %s", sayfa.nav_key)
 
     def request_restart(self) -> None:
         self.restarting = True

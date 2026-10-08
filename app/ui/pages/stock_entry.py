@@ -49,9 +49,9 @@ QUICK_QUANTITIES = (1, 6, 12, 24, 48)
 
 
 class StockEntryPage(Page):
-    nav_title = "📦  Stok Girişi"
+    nav_title = "📦  Mal Kabul"
     nav_key = "stok_girisi"
-    nav_group = "gunluk"
+    nav_group = "stok"
     accepts_scans = True
     completes_with_shortcut = True     # F10 = "Girisi Tamamla" (mevcut davranis)
 

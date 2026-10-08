@@ -80,7 +80,7 @@ FALLBACK_DISPLAY_HOLD_MS = 4000
 class CartSalePage(Page):
     nav_title = "🛒  Sepetli Satış"
     nav_key = "sepetli_satis"
-    nav_group = "gunluk"
+    nav_group = "kasa"
     accepts_scans = True
     kasa_sayfasi = True
     # completes_with_shortcut TANIMLANMAZ: taban sınıftan False gelir.
@@ -141,6 +141,14 @@ class CartSalePage(Page):
 
         self._render()
         self._show_ready()
+        self.apply_settings()
+
+    def apply_settings(self) -> None:
+        """Hızlı Satış kapalıysa ona giden düğme de görünmez."""
+        try:
+            self.mode_button.setVisible(self.services.settings.show_quick_sale())
+        except Exception:
+            log.exception("Kasa ayarları uygulanamadı")
 
     # ===================== Kurulum =======================================
     def _build_scan_card(self) -> QWidget:

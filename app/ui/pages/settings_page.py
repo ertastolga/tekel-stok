@@ -28,6 +28,7 @@ from app.core.clock import shift_days
 from app.core.errors import DomainError
 from app.core.tr import fmt_datetime
 from app.ui import metrics, sound, theme
+from app.services.security_service import ProtectedAction
 from app.ui.dialogs.common_dialogs import ask_confirm, scanning_suspended, show_error, show_info
 from app.ui.pages.base import Page
 from app.ui.widgets.common import PageHeader, make_label
@@ -39,6 +40,8 @@ class SettingsPage(Page):
     nav_title = "⚙️  Ayarlar"
     nav_key = "ayarlar"
     nav_group = "yonetim"
+    #: Ayarlar'a girmek yönetici PIN'i ister (PIN kuruluysa).
+    gate_action = ProtectedAction.AYARLAR
 
     def __init__(self, services, main_window) -> None:
         super().__init__(services, main_window)

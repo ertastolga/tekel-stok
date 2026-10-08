@@ -16,8 +16,10 @@ class Page(QWidget):
     nav_title = ""
     #: Gezinme anahtarı (``go_to`` bunu kullanır).
     nav_key = ""
-    #: Menüde hangi grupta görünecek: "gunluk" | "yonetim" | "" (gizli).
+    #: Menüde hangi grupta görünecek: "kasa" | "stok" | "yonetim" | "" (gizli).
     nav_group = "yonetim"
+    #: Girişte PIN isteyen sayfa için ``ProtectedAction`` adı (yoksa ``None``).
+    gate_action: str | None = None
     #: Bu sayfa barkod okutma kabul ediyor mu?
     accepts_scans = False
     #: F10 ("İşlemi Tamamla") kısayolu bu sayfayı tamamlayabilir mi?

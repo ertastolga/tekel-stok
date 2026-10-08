@@ -199,11 +199,12 @@ def test_vazgecilen_pin_korunan_eylemi_yaptirmaz(
     # Geri yükleme
     geri = []
     monkeypatch.setattr(services.backup, "restore", lambda yol: geri.append(yol))
-    window.go_to("ayarlar")
+    window.go_to("ayarlar")                                # M2d: giriş kapısı
+    assert window._current_key == "stok_durumu", "PIN'siz Ayarlar'a girilmedi"
     window.pages["ayarlar"]._restore()
     assert geri == []
     assert onay.sorular == [], "PIN'siz hiçbir onay sorusuna bile gelinmedi"
-    assert pin_cevabi["cagri"] == 3
+    assert pin_cevabi["cagri"] == 4, "3 eylem + Ayarlar giriş kapısı"
 
 
 def test_gecmis_satis_geri_alma_pin_ister(window, qapp, services, bira, pin_kurulu, pin_cevabi, onay):

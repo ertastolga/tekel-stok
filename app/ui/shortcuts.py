@@ -26,11 +26,11 @@ class Shortcut:
 SHORTCUTS: tuple[Shortcut, ...] = (
     Shortcut("F1", "Hızlı Satış", "goto:hizli_satis", True),
     Shortcut("F2", "Sepetli Satış", "goto:sepetli_satis", True),
-    Shortcut("F3", "Stok Girişi", "goto:stok_girisi", True),
+    Shortcut("F3", "Mal Kabul", "goto:stok_girisi", True),
     Shortcut("F4", "Yeni Müşteri", "yeni_musteri", True),
     Shortcut("F5", "Yenile", "yenile"),
     Shortcut("F6", "Ürünler", "goto:urunler"),
-    Shortcut("F7", "Bugün", "goto:panel"),
+    Shortcut("F7", "Analiz", "goto:panel"),
     Shortcut("F8", "Son İşlemi Geri Al", "geri_al", True),
     Shortcut("F9", "Stok Sayımı", "goto:stok_sayimi"),
     Shortcut("F10", "İşlemi Tamamla", "tamamla", True),

@@ -667,7 +667,13 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "manual_backup_dir": "",
     "last_backup_at_utc": "0",
     "last_backup_data_version": "0",
+    # --- Kasa (V1.2) ---
+    # Hızlı Satış gizlenebilir (menü, Ana Ekran kartı, F1).
+    "show_quick_sale": "1",
     # --- Arayüz ---
+    # Kapalı menü grupları (iç ayar). "VARSAYILAN": kipe göre (SALES_FIRST'te
+    # STOK kapalı başlar); kullanıcı açıp kapatınca virgüllü liste yazılır.
+    "nav_collapsed_groups": "VARSAYILAN",
     "sound_enabled": "1",
     "window_geometry": "",
     "window_maximized": "0",

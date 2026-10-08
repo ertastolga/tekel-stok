@@ -53,7 +53,7 @@ class QuickSalePage(Page):
     nav_title = "⚡  Hızlı Satış"
     nav_key = "hizli_satis"
     kasa_sayfasi = True
-    nav_group = "gunluk"
+    nav_group = "kasa"
     accepts_scans = True
 
     def __init__(self, services, main_window) -> None:
