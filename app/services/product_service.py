@@ -652,7 +652,7 @@ class ProductService:
             )
             if row:
                 self.audit.record(
-                    "URUN_DURUM", f"{row['name']} pasife alındı.",
+                    "URUN_DURUM", f"{row['name']} kullanımdan kaldırıldı.",
                     "product", product_id, details={"barkodlar": kapatilan}, conn=conn,
                 )
         return None

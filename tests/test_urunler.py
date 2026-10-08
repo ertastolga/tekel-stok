@@ -186,7 +186,9 @@ def test_kaldirilmis_kategori_kaydedince_kaybolmaz(qapp, services, bira):
     services.categories.deactivate(cin)
     p = ProductEditDialog(services, bira, MODE_EDIT)
     try:
-        assert p.category_combo.currentText() == "Alkollü İçecekler > Cin (pasif)"
+        assert p.category_combo.currentText() == (
+            "Alkollü İçecekler > Cin (kullanımdan kaldırıldı)"
+        )
         p._save()
         assert services.products.get(bira)["category_id"] == cin
     finally:

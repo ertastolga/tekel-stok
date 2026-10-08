@@ -4,10 +4,10 @@ Liste DAİMA sayfalıdır: 5.000 ürünlük bir dükkânda bile tam liste belle�
 alınmaz. Bir sayfa için kategori yolları ve barkodlar TOPLU okunur (satır
 başına sorgu yok).
 
-Ürün silinmez, "pasife alınır": geçmiş satışlar, maliyetler ve stok hareketleri
-olduğu gibi kalır. Pasif ürünler "Kullanım" süzgecinden bulunur ve yeniden
-kullanıma alınabilir; pasife alınırken kapatılan barkodlar, bu arada başka
-ürüne verilmemişse geri açılır.
+Ürün silinmez, "kullanımdan kaldırılır": geçmiş satışlar, maliyetler ve stok
+hareketleri olduğu gibi kalır. Kaldırılan ürünler "Kullanım" süzgecinden bulunur
+ve yeniden kullanıma alınabilir; kaldırılırken kapatılan barkodlar, bu arada
+başka ürüne verilmemişse geri açılır. (Terimler: docs/TERMINOLOJI.md)
 
 V1.2 (D-10): düğmeler seçime göre açılır; birden çok ürün seçilip toplu
 "Kategoriye Taşı" yapılabilir (önce ne olacağı gösterilir).
@@ -284,7 +284,7 @@ class ProductsPage(Page):
 
             ad = QTableWidgetItem(urun["name"])
             if not urun["is_active"]:
-                ad.setText(f"{urun['name']}  (pasif)")
+                ad.setText(f"{urun['name']}  (kullanımdan kaldırıldı)")
                 ad.setForeground(QColor(theme.TEXT_MUTED))
             kategori = QTableWidgetItem(yollar.get(urun["category_id"], ""))
             stok = QTableWidgetItem(str(urun["current_stock"]))
@@ -419,14 +419,15 @@ class ProductsPage(Page):
             if not self.guard_require(ProtectedAction.URUN_PASIF):
                 return
         with scanning_suspended(self.main_window.router):
+            eylem = "kullanımdan kaldırılsın" if aktif else "yeniden kullanıma alınsın"
             onay = ask_confirm(
                 self,
-                f"{urun['name']} {'pasife alınsın' if aktif else 'yeniden kullanıma alınsın'} mı?",
+                f"{urun['name']} {eylem} mı?",
                 "Geçmiş satışlar ve stok hareketleri KORUNUR. Ürün silinmez. "
                 "Barkodları kasada artık okunmaz."
                 if aktif else
-                "Ürün yeniden satılabilir olur. Pasife alınırken kapatılan barkodları, "
-                "başka bir ürüne verilmemişse geri açılır.",
+                "Ürün yeniden satılabilir olur. Kullanımdan kaldırılırken kapatılan "
+                "barkodları, başka bir ürüne verilmemişse geri açılır.",
                 accept_text="Evet",
                 danger=aktif,
             )

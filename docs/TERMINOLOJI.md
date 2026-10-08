@@ -34,7 +34,7 @@ Türkçe, kısa cümle, İngilizce ya da teknik sözcük yok.
 | **Vazgeç** | Hiçbir şey değişmeden çıkar | "İptal" yalnızca bir kaydı iptal etmek için (Sayımı İptal Et, Girişi İptal Et) |
 | **Tamam** | Yalnızca bilgi penceresini kapatır | — |
 | **Geri Al** | Ters kayıt yazar (satış, giriş, toplu fiyat). Kayıt SİLİNMEZ | "Sil" denmez |
-| **Kullanımdan Kaldır** / **Yeniden Kullanıma Al** | Ürün, barkod, kategori. Geçmiş korunur | "Pasife Al", "Sil" (M12b'de birleştirildi) |
+| **Kullanımdan Kaldır** / **Yeniden Kullanıma Al** | Ürün, barkod, kategori. Geçmiş korunur. Listede durum etiketi: "(kullanımdan kaldırıldı)" | "Pasife Al", "Sil", "(pasif)" (M12b'de birleştirildi; kalan etiketler M12d'de) |
 | **Beklet** / **Bekleyenler** | Sepeti kenara koy / bekleyen sepetler | park, askı |
 | **Önizle** → **Uygula** | Toplu işler önce gösterilir, sonra uygulanır | — |
 | **Güncel fiyatları uygula** | Sepetteki değişen fiyatı açıkça kabul | — |

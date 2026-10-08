@@ -10,8 +10,8 @@ ad ve fiyat kopyalanmaz — onlar ürünü ayıran şeylerdir.
 Düzenleme (V1.2, D-09): pencerede yapılan HER ŞEY (alanlar, fiyat, etiketler,
 tedarikçi, barkod ekleme/kaldırma, yerler, referans alış fiyatı) yalnızca
 "Kaydet"e basınca ve TEK işlemde yazılır; "Vazgeç" hiçbir şeyi değiştirmez.
-Esas raf korunur. Ürünün kategorisi kaldırılmışsa listede "(pasif)" olarak
-görünür ve kaydedince SİLİNMEZ.
+Esas raf korunur. Ürünün kategorisi kaldırılmışsa listede "(kullanımdan
+kaldırıldı)" olarak görünür ve kaydedince SİLİNMEZ.
 """
 from __future__ import annotations
 
@@ -289,7 +289,7 @@ class ProductEditDialog(QDialog):
         if index < 0 and urun["category_id"] is not None:
             # Kaldırılmış kategori: görünür kalır, kaydedince kaybolmaz.
             yol = self.services.categories.path(urun["category_id"])
-            self.category_combo.addItem(f"{yol} (pasif)", urun["category_id"])
+            self.category_combo.addItem(f"{yol} (kullanımdan kaldırıldı)", urun["category_id"])
             index = self.category_combo.findData(urun["category_id"])
         if index >= 0:
             self.category_combo.setCurrentIndex(index)
