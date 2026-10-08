@@ -472,10 +472,37 @@ def _dosya_adi(metin: str) -> str:
     return "".join(c for c in metin.translate(tablo).lower() if c.isalnum() or c == "_")
 
 
+def kirpilan_dugmeler(kok) -> list[tuple[str, int, int]]:
+    """Görünür düğmelerden yazısı DİKEYDE kırpılanlar: (metin, gerek, mevcut).
+
+    Stil sayfasındaki ``min-height`` gerecin açık en küçük yüksekliği olur;
+    yer daralınca (ör. kaydırılan menü) yerleşim düğmeyi doğal yüksekliğinin
+    altına, o en küçük değere sıkıştırır. İçerik alanı yazı satırından kısa
+    kalırsa g/y/ç/ş'nin alt kısmı kesilir (M12d son kapı: menü %130'da
+    "Avarlar", "Gecmis" okunuyordu).
+    """
+    from PySide6.QtGui import QFontMetrics
+    from PySide6.QtWidgets import QPushButton, QStyle, QStyleOptionButton
+
+    sonuc = []
+    for dugme in kok.findChildren(QPushButton):
+        if not dugme.isVisible() or not dugme.text().strip():
+            continue
+        secenek = QStyleOptionButton()
+        dugme.initStyleOption(secenek)
+        icerik = dugme.style().subElementRect(
+            QStyle.SubElement.SE_PushButtonContents, secenek, dugme)
+        satir = QFontMetrics(dugme.font()).height()
+        if icerik.height() < satir:
+            sonuc.append((dugme.text().strip(), satir, icerik.height()))
+    return sonuc
+
+
 def tasmalar(b: Baglam) -> list[dict]:
     """Yerel çizimde taşma denetimi: hiçbir sayfa alanından GENİŞ olmamalı
     (yatay kaydırma yok); Kasa sayfaları ayrıca alanından UZUN olmamalı (Kasa
-    kaydırılmaz; diğer sayfalar dikeyde kaydırılabilir)."""
+    kaydırılmaz; diğer sayfalar dikeyde kaydırılabilir). M12d: hiçbir görünür
+    düğmenin (sayfa ve menü) yazısı dikeyde kırpılmamalı."""
     sonuc = []
     alan = b.pencere.stack.size()
     for anahtar in list(b.pencere.pages):
@@ -488,6 +515,19 @@ def tasmalar(b: Baglam) -> list[dict]:
         if kasa and gerek.height() > alan.height():
             sonuc.append({"sayfa": anahtar, "yon": "dikey", "gerek": gerek.height(),
                           "mevcut": alan.height()})
+        for metin, satir, icerik in kirpilan_dugmeler(sayfa):
+            sonuc.append({"sayfa": anahtar, "yon": f"yazı kırpılıyor '{metin}'",
+                          "gerek": satir, "mevcut": icerik})
+    # Menü, bütün öğeleri görünürken (en kalabalık hâli) bir kez denetlenir;
+    # kayıtlı açık/kapalı durumu değişmez, sonra eski hâline döner.
+    for dugme in b.pencere.nav_buttons.values():
+        dugme.setVisible(True)
+    b.isle()
+    for metin, satir, icerik in kirpilan_dugmeler(b.pencere.nav_scroll.widget()):
+        sonuc.append({"sayfa": "menü", "yon": f"yazı kırpılıyor '{metin}'",
+                      "gerek": satir, "mevcut": icerik})
+    b.pencere.apply_nav_visibility()
+    b.isle()
     return sonuc
 
 

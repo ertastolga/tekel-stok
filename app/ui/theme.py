@@ -310,6 +310,20 @@ QLineEdit#barcodeInput[kompakt="evet"] {{
     min-height: {max(text_height(metrics.FONT_KASA_BARCODE_PT) + 6,
                      metrics.KASA_BARCODE_MIN_HEIGHT)}px;
 }}
+/* M12d: düğmenin min-height'i açık en küçük yüksekliğidir; yer daralınca
+   (kaydırılan menü, yan panel) yerleşim düğmeyi ona kadar SIKIŞTIRIR. İçerik
+   alanı yazı satırından kısa kalırsa g/y/ç/ş'nin alt kısmı kesilir. En küçük
+   içerik yüksekliği bu yüzden ÖLÇÜLEN yazı satırıdır (yazı ölçeğiyle büyür). */
+QPushButton {{
+    min-height: {max(metrics.BUTTON_HEIGHT - 20, text_height(metrics.FONT_BASE_PT))}px;
+}}
+QPushButton#navButton {{ min-height: {text_height(metrics.FONT_BASE_PT)}px; }}
+QPushButton#navGroupHeader {{
+    min-height: {max(28, text_height(metrics.FONT_SMALL_PT))}px;
+}}
+QPushButton#kasaMore {{
+    min-height: {max(metrics.TOUCH_TARGET_MIN - 20, text_height(metrics.FONT_CART_QTY_PT))}px;
+}}
 """
 
 
