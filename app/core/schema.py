@@ -684,6 +684,14 @@ DEFAULT_SETTINGS: dict[str, str] = {
     # --- Yedekleme ---
     "auto_backup_interval_minutes": "120",
     "auto_backup_retention": "10",
+    # Günlük yedek (M10a/b): her iş günü en çok bir kuşak; en yeni N gün saklanır.
+    "daily_backup_retention_days": "30",
+    # Otomatik/günlük yedek klasörü; boş = veri klasörü/backups.
+    "auto_backup_dir": "",
+    # İç: son yedek hatası ve son günlük yedeğin veri sürümü.
+    "last_backup_error_utc": "0",
+    "last_backup_error": "",
+    "last_backup_daily_version": "-1",
     "manual_backup_dir": "",
     "last_backup_at_utc": "0",
     "last_backup_data_version": "0",

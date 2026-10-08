@@ -220,6 +220,10 @@ class SettingsService:
         return self.get("manual_backup_dir", "")
 
     # -- Arayüz ------------------------------------------------------------
+    def daily_backup_retention_days(self) -> int:
+        """Saklanan günlük yedek sayısı (7–365, varsayılan 30)."""
+        return min(365, max(7, self.get_int("daily_backup_retention_days", 30)))
+
     def sound_enabled(self) -> bool:
         return self.get_bool("sound_enabled", True)
 

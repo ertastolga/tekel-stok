@@ -447,6 +447,11 @@ class Database:
         self.set_meta("last_seen_clock_utc", str(now_utc()), mutating=False)
 
     # -- Yedekleme ---------------------------------------------------------
+    @property
+    def in_transaction(self) -> bool:
+        """Açık bir işlem var mı? (Yedek alınmaz; tetikleyiciler bekler.)"""
+        return self._depth > 0
+
     def backup_to(self, destination: str | Path) -> Path:
         """SQLite yedekleme API'si ile tutarlı kopya alır.
 
@@ -456,16 +461,25 @@ class Database:
         yazılmış bir yedek dosyası hiçbir zaman ortada kalmaz.
         """
         destination = Path(destination)
+        if self._depth > 0:
+            # Yarım bir işlemin ortasında alınan yedek, kullanıcının o an
+            # beklediği durumu yansıtmaz; çağıran daha sonra yeniden dener.
+            raise sqlite3.OperationalError("işlem sürerken yedek alınamaz")
         destination.parent.mkdir(parents=True, exist_ok=True)
         temp = destination.with_suffix(destination.suffix + ".tmp")
         try:
             with self._lock:
+                # V1.2: AYRI, salt okunur bir bağlantıdan alınır (§5.11): çalışan
+                # bağlantının durumuna ve WAL/SHM dosyalarının kopyalanmasına
+                # bağlı değildir; son TAMAMLANMIŞ işlemin tutarlı görüntüsüdür.
+                kaynak = sqlite3.connect(salt_okunur_uri(self.path), uri=True, timeout=10)
                 target = sqlite3.connect(str(temp))
                 try:
-                    self.conn.backup(target)
+                    kaynak.backup(target)
                     target.execute("PRAGMA wal_checkpoint(TRUNCATE)")
                 finally:
                     target.close()
+                    kaynak.close()
             temp.replace(destination)
         except BaseException:
             # Yarım kalmış geçici dosya diskte yer kaplamaya devam etmesin.

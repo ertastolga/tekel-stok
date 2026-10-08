@@ -637,6 +637,19 @@ class SettingsPage(Page):
         k.addWidget(self._hint(
             "Elle aldığınız yedekler bu sayıdan etkilenmez; asla kendiliğinden silinmez."
         ))
+        self.daily_spin = self._spin("daily_backup_retention_days", 7, 365, 1, " gün")
+        k.addLayout(self._satir("Günlük yedek kaç gün saklansın", self.daily_spin))
+        k.addWidget(self._hint(
+            "Her iş günü için bir günlük yedek alınır (açılışta, boşta ya da kapanışta; "
+            "satışı asla bekletmez)."
+        ))
+        self.auto_dir_label = make_label("", "cardHint", wrap=True)
+        self.auto_dir_button = QPushButton("Otomatik yedek klasörünü seç")
+        self.auto_dir_button.clicked.connect(self._choose_auto_dir)
+        self._kayit("auto_backup_dir", self.auto_dir_button, self._auto_dir_yaz)
+        k.addLayout(self._satir("", self.auto_dir_label, self.auto_dir_button,
+                                self._varsayilan_dugmesi("auto_backup_dir",
+                                                         self.auto_dir_button)))
 
         dugmeler = QHBoxLayout()
         self.backup_now_button = QPushButton("Şimdi Yedek Al")
@@ -936,3 +949,27 @@ class SettingsPage(Page):
             return
         self.services.settings.set("manual_backup_dir", klasor)
         self._fill_backups()
+
+    def _auto_dir_yaz(self) -> None:
+        ozel = self.services.settings.get("auto_backup_dir", "") or ""
+        etkin = self.services.backup.auto_dir()
+        self.auto_dir_label.setText(
+            f"Otomatik ve günlük yedekler: {etkin}" + ("" if ozel else " (varsayılan)"))
+
+    def _choose_auto_dir(self) -> None:
+        with scanning_suspended(self.main_window.router):
+            klasor = QFileDialog.getExistingDirectory(
+                self, "Otomatik yedek klasörü seçin", str(self.services.backup.auto_dir()))
+        if klasor:
+            self.set_auto_backup_dir(klasor)
+
+    def set_auto_backup_dir(self, klasor: str) -> bool:
+        """Klasörü denetler; kullanılamıyorsa nedenini söyler, kaydetmez."""
+        sorun = self.services.backup.auto_dir_problem(klasor)
+        if sorun:
+            show_error(self, f"Bu klasör kullanılamaz. {sorun}")
+            return False
+        self.services.settings.set("auto_backup_dir", klasor)
+        self._auto_dir_yaz()
+        self._fill_backups()
+        return True

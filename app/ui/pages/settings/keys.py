@@ -65,6 +65,8 @@ AYAR_BOLUMU: dict[str, str] = {
     # Yedekleme
     "auto_backup_interval_minutes": "yedekleme",
     "auto_backup_retention": "yedekleme",
+    "daily_backup_retention_days": "yedekleme",
+    "auto_backup_dir": "yedekleme",
     "manual_backup_dir": "yedekleme",
 }
 
