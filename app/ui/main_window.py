@@ -564,7 +564,8 @@ class MainWindow(QMainWindow):
 
     def apply_settings(self) -> None:
         """Ayar değişikliklerini çalışan uygulamaya uygular."""
-        sound.set_enabled(self.services.settings.sound_enabled())
+        acik, seviye, turler = self.services.settings.ses_ayarlari()
+        sound.yapilandir(acik, seviye, turler, config.data_dir() / "sounds")
         self.scan_guard.set_window(self.services.settings.duplicate_scan_ms())
         self.apply_nav_visibility()
         self._update_footer()

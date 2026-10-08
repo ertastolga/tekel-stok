@@ -40,6 +40,11 @@ AYAR_BOLUMU: dict[str, str] = {
     "density": "gorunum",
     # Ses
     "sound_enabled": "ses",
+    "sound_volume": "ses",
+    "sound_scan": "ses",
+    "sound_success": "ses",
+    "sound_warning": "ses",
+    "sound_error": "ses",
     # Barkod Okuyucu
     "duplicate_scan_ms": "barkod",
     "barcode_trim_prefix": "barkod",

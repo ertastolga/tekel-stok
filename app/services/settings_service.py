@@ -126,6 +126,13 @@ class SettingsService:
         return dogrula(self.get("theme", "LIGHT"), self.get("font_scale", "100"),
                        self.get("density", "NORMAL"))
 
+    def ses_ayarlari(self) -> tuple[bool, int, set[str]]:
+        """(sesler açık mı, seviye 1–3, açık türler)."""
+        seviye = self.get_int("sound_volume", 2)
+        turler = {tur for tur in ("scan", "success", "warning", "error")
+                  if self.get_bool(f"sound_{tur}", True)}
+        return self.sound_enabled(), seviye if seviye in (1, 2, 3) else 2, turler
+
     def ekran_klavyesi(self) -> bool:
         """Kasa arama alanlarında ekran klavyesi mi, fiziksel klavye mi?"""
         return self.get_bool("ekran_klavyesi", True)

@@ -442,7 +442,7 @@ class CartSalePage(KatmanSahibi, Page):
             self.banner.show_error(hata.message)
             return
 
-        sound.success()
+        sound.scan()
         self._render()
         self._schedule_autosave()
         self._highlight(product_id)

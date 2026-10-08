@@ -702,6 +702,12 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "font_scale": "100",
     "density": "NORMAL",
     "sound_enabled": "1",
+    # Ses seviyesi 1 (düşük) – 3 (yüksek) ve tür başına açık/kapalı (M9b).
+    "sound_volume": "2",
+    "sound_scan": "1",
+    "sound_success": "1",
+    "sound_warning": "1",
+    "sound_error": "1",
     "window_geometry": "",
     "window_maximized": "0",
     # --- Bakım ---

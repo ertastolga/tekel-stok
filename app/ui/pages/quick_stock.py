@@ -284,7 +284,7 @@ class QuickStockPage(Page):
                 if eslesme.multiplier != self.multiplier:
                     self.set_unit(eslesme.multiplier)
                 self._adet_ekle(1)
-                sound.success()
+                sound.scan()
                 return
             sound.error()
             self.banner.show_warning(
@@ -333,7 +333,7 @@ class QuickStockPage(Page):
                                "Bilinmiyorsa boş bırakın; stok değeri tahmini hesaplanır.")
         self._hedefle(ADET)
         self._etkin(True)
-        sound.success()
+        sound.scan()
         self.banner.show_idle("Adedi girin ve Kaydet'e dokunun.", urun["name"])
 
     def _birimleri_kur(self, product_id: int) -> None:

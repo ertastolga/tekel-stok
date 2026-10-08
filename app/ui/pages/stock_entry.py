@@ -430,7 +430,7 @@ class StockEntryPage(Page):
 
         self._last_product_id = product_id
         urun = self.services.products.get(product_id)
-        sound.success()
+        sound.scan()
         toplam = self._line_quantity(product_id)
         self.banner.show_stock(
             "EKLENDİ",

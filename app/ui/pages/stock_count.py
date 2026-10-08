@@ -272,7 +272,7 @@ class StockCountPage(Page):
             sound.error()
             self.banner.show_error(hata.message)
             return
-        sound.success()
+        sound.scan()
         self.banner.show_success(
             "SAYILDI", eslesme.product_name, f"Bu üründen toplam: {toplam} adet"
         )

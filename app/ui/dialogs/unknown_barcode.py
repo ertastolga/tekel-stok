@@ -204,7 +204,7 @@ class UnknownBarcodeDialog(TouchDialog):
         """Pencere açıkken okutma: barkod alanı etkinse oraya YAZILIR."""
         if event is not None and self.display is not None and self.display.kind == BARKOD:
             self.display.set_value(event.code)
-            sound.success()
+            sound.scan()
             return
         self.blocked_notice.show_blocked()
 

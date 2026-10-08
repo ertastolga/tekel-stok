@@ -440,6 +440,21 @@ class SettingsPage(Page):
         k = QVBoxLayout(kutu)
         self.sound_check = self._check("sound_enabled", "Okutma ve satış seslerini çal")
         k.addWidget(self.sound_check)
+        self.volume_combo = QComboBox()
+        for seviye, ad in sound.SEVIYELER.items():
+            self.volume_combo.addItem(ad, seviye)
+        self.volume_combo.currentIndexChanged.connect(
+            lambda _i: self._kaydet("sound_volume", self.volume_combo.currentData()))
+        self._kayit("sound_volume", self.volume_combo, lambda: self._combo_yukle(
+            self.volume_combo, self.services.settings.ses_ayarlari()[1]))
+        k.addLayout(self._satir("Ses seviyesi", self.volume_combo))
+        self.sound_type_checks = {}
+        for tur, aciklama in sound.TURLER.items():
+            kutucuk = self._check(f"sound_{tur}", aciklama)
+            self.sound_type_checks[tur] = kutucuk
+            dinle = QPushButton("Dinle")
+            dinle.clicked.connect(lambda _=False, t=tur: sound.cal(t))
+            k.addLayout(self._satir("", kutucuk, dinle))
         k.addWidget(self._hint(
             "Sesler kasiyerin ekrana bakmadan okutmanın başarılı olduğunu "
             "anlamasını sağlar. Kapatırsanız uyarılar yalnızca ekranda görünür."

@@ -221,7 +221,8 @@ def main(argv: list[str] | None = None) -> int:
             {"window_geometry": "", "window_maximized": 0}
         )
 
-    sound.set_enabled(services.settings.sound_enabled())
+    acik, seviye, turler = services.settings.ses_ayarlari()
+    sound.yapilandir(acik, seviye, turler, config.data_dir() / "sounds")
 
     # Tutarlılık denetimi: sorun yoksa kullanıcı HİÇBİR ŞEY görmez.
     try:

@@ -12,7 +12,7 @@ devreye girer:
 
 * ``kip_pencereler_kapali`` — modal pencereler testte açılmaz; varsayılan
   cevap "Vazgeç" (V1.1 davranışı, birebir korunur),
-* ``sesler_kapali`` — winsound çağrıları yapılmaz. ``sound.set_enabled`` DEĞİL,
+* ``sesler_kapali`` — ses çalınmaz (``_oynat``/``_beep`` yamalanır). ``sound.set_enabled`` DEĞİL,
   çalma ilkelleri yamalanır; ayar kaydı ``apply_settings`` ile sesi yeniden
   açsa bile test sessiz kalır,
 * ``ic_ice_olay_dongusu_yasak`` — Python'dan ``QEventLoop.exec`` çağrısı testte
@@ -81,7 +81,7 @@ def kip_pencereler_kapali(monkeypatch):
 @pytest.fixture(autouse=True)
 def sesler_kapali(monkeypatch):
     monkeypatch.setattr(sound, "_beep", lambda *args, **kwargs: None)
-    monkeypatch.setattr(sound, "_message", lambda *args, **kwargs: None)
+    monkeypatch.setattr(sound, "_oynat", lambda *args, **kwargs: True)
 
 
 @pytest.fixture(autouse=True)
