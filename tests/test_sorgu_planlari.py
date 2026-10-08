@@ -121,6 +121,19 @@ def veri(duvar_saati, services, bira, cips_urunu):
             "yil": dn.ozel("2025-10-07", "2026-10-06")}
 
 
+def _gecmis(services, v):
+    """Geçmiş ekranı (M12a): tarihsiz, tarihli, ödeme süzgeçli, sonraki sayfa,
+    tarihli özet ve ayrıntı."""
+    from app.services.sale_service import SatisFiltresi
+
+    gunluk = SatisFiltresi(baslangic=v["gun"].baslangic, bitis=v["gun"].bitis)
+    ilk = services.sales.history()
+    return (services.sales.recent(100), ilk, services.sales.history(gunluk),
+            services.sales.history(SatisFiltresi(odeme=PaymentMethod.CARD)),
+            services.sales.history(once_id=ilk[0]["id"]),
+            services.sales.history_summary(gunluk), services.sales.detail(ilk[0]["id"]))
+
+
 def _islemler(services, v) -> dict:
     a = services.analytics
     d, yil = v["gun"], v["yil"]
@@ -151,7 +164,7 @@ def _islemler(services, v) -> dict:
                                  services.products.search(text="tuborg", limit=100)),
         "fiyat_listesi": lambda: services.pricing.listele(limit=500),
         "kategori_agaci": lambda: services.categories.tree(),
-        "gecmis": lambda: services.sales.recent(100),
+        "gecmis": lambda: _gecmis(services, v),
         # ANALİZ (önbellek her testte boş: sorgular gerçekten çalışır)
         "analiz_genel": lambda: (a.genel(d), a.genel(yil)),
         "analiz_egilim": lambda: [a.egilim(t, yil) for t in

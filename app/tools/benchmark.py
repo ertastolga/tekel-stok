@@ -186,10 +186,15 @@ def olc(veri: Path, calisma: Path, arayuz: bool = False, tekrar: int = 30,
                 lambda: svc.products.search(text=rng.choice(kelimeler), limit=100), tekrar)
             o["fiyat_listesi"] = _olc(lambda: svc.pricing.listele(limit=500), max(10, tekrar // 3))
             o["kategori_agaci"] = _olc(lambda: svc.categories.tree(), tekrar)
-            o["gecmis_satislar"] = _olc(lambda: db.query(
-                "SELECT s.*, (SELECT i.product_name_snapshot FROM sale_items i "
-                " WHERE i.sale_id = s.id ORDER BY i.line_no LIMIT 1) AS ilk FROM sales s "
-                "WHERE s.entry_type = 'SALE' ORDER BY s.id DESC LIMIT 100 OFFSET 0"), tekrar)
+            from app.services.sale_service import SatisFiltresi
+
+            o["gecmis_satislar"] = _olc(lambda: svc.sales.history(limit=100), tekrar)
+            gecen_ay = dn.hazir(dn.GECEN_AY, son_gun)
+            ay_suzgeci = SatisFiltresi(baslangic=gecen_ay.baslangic, bitis=gecen_ay.bitis)
+            o["gecmis_gecen_ay"] = _olc(lambda: (svc.sales.history(ay_suzgeci, limit=100),
+                                                 svc.sales.history_summary(ay_suzgeci)), tekrar)
+            o["gecmis_kart_suzgeci"] = _olc(
+                lambda: svc.sales.history(SatisFiltresi(odeme="KART"), limit=100), tekrar)
 
             gun = son_gun
             bugun_d = dn.hazir(dn.BUGUN, gun)

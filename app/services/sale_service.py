@@ -43,6 +43,54 @@ from app.core.money import format_tl
 
 log = logging.getLogger(__name__)
 
+#: Geçmiş süzgeci: ödeme yöntemi hiç kaydedilmemiş (NULL) satışlar.
+ODEME_KAYITSIZ = "KAYITSIZ"
+#: Geçmiş süzgeci: satış durumu.
+DURUM_TAMAM = "TAMAM"
+DURUM_GERI_ALINDI = "GERI_ALINDI"
+
+
+@dataclass(frozen=True, slots=True)
+class SatisFiltresi:
+    """Geçmiş satış süzgeci (V1.2 M12a). ``None`` = o alanda süzme yok.
+
+    Tarihler İŞ GÜNÜDÜR ve dahildir. ``kip`` ``SaleMode`` değeri, ``odeme``
+    ``PaymentMethod`` değeri ya da ``ODEME_KAYITSIZ``, ``durum``
+    ``DURUM_TAMAM`` / ``DURUM_GERI_ALINDI``.
+    """
+
+    baslangic: str | None = None
+    bitis: str | None = None
+    kip: str | None = None
+    odeme: str | None = None
+    durum: str | None = None
+
+    @property
+    def tarihli(self) -> bool:
+        return bool(self.baslangic or self.bitis)
+
+
+@dataclass(frozen=True, slots=True)
+class SatisAyrintisi:
+    """Bir satışın tamamı: başlık, satırlar ve (varsa) ters kaydı."""
+
+    satis: sqlite3.Row
+    satirlar: list[sqlite3.Row]
+    geri_alma: sqlite3.Row | None
+
+    @property
+    def satir_sayisi(self) -> int:
+        return len(self.satirlar)
+
+
+@dataclass(frozen=True, slots=True)
+class GecmisOzeti:
+    """Tarihli bir süzgecin toplamı (geri alınanlar ciroya katılmaz)."""
+
+    satis_sayisi: int
+    geri_alinan: int
+    net_tutar: int
+
 
 @dataclass(slots=True)
 class SaleLineSpec:
@@ -440,6 +488,77 @@ class SaleService:
             " ORDER BY s.id DESC LIMIT ?",
             (max(1, min(200, limit)),),
         )
+
+    @staticmethod
+    def _gecmis_kosullari(filtre: SatisFiltresi) -> tuple[list[str], list]:
+        kosullar = ["s.entry_type = 'SALE'"]
+        degerler: list = []
+        if filtre.baslangic:
+            kosullar.append("s.business_date >= ?")
+            degerler.append(filtre.baslangic)
+        if filtre.bitis:
+            kosullar.append("s.business_date <= ?")
+            degerler.append(filtre.bitis)
+        if filtre.kip:
+            kosullar.append("s.sale_mode = ?")
+            degerler.append(filtre.kip)
+        if filtre.odeme == ODEME_KAYITSIZ:
+            kosullar.append("s.payment_method IS NULL")
+        elif filtre.odeme:
+            kosullar.append("s.payment_method = ?")
+            degerler.append(filtre.odeme)
+        if filtre.durum == DURUM_TAMAM:
+            kosullar.append("s.is_reversed = 0")
+        elif filtre.durum == DURUM_GERI_ALINDI:
+            kosullar.append("s.is_reversed = 1")
+        return kosullar, degerler
+
+    def history(self, filtre: SatisFiltresi | None = None, limit: int = 100,
+                once_id: int | None = None) -> list[sqlite3.Row]:
+        """Geçmiş ekranı: süzülmüş satışlar, YENİDEN ESKİYE.
+
+        Sayfalama ANAHTAR KÜMELİDİR (``once_id``'den küçük kimlikler): yıllar
+        sonra da her sayfa aynı hızda gelir; OFFSET ile derin sayfalar
+        yavaşlardı (M11 notu). Her satır ilk ürünün adını ve SATIR (kalem)
+        sayısını taşır — ``item_count`` ise satılan ADETtir (D-15).
+        """
+        kosullar, degerler = self._gecmis_kosullari(filtre or SatisFiltresi())
+        if once_id is not None:
+            kosullar.append("s.id < ?")
+            degerler.append(once_id)
+        return self.db.query(
+            "SELECT s.*, ("
+            "  SELECT i.product_name_snapshot FROM sale_items i "
+            "   WHERE i.sale_id = s.id ORDER BY i.line_no LIMIT 1) AS ilk_urun, "
+            "  (SELECT COUNT(*) FROM sale_items i WHERE i.sale_id = s.id) AS satir_sayisi "
+            "  FROM sales s WHERE " + " AND ".join(kosullar) +
+            " ORDER BY s.id DESC LIMIT ?",
+            (*degerler, max(1, min(500, limit))),
+        )
+
+    def history_summary(self, filtre: SatisFiltresi) -> GecmisOzeti | None:
+        """Tarihli süzgecin toplamı; tarihsiz süzgeçte ``None`` (tüm geçmiş
+        toplanmaz — ekran açılışı geçmişin uzunluğuyla yavaşlamasın)."""
+        if not filtre.tarihli:
+            return None
+        kosullar, degerler = self._gecmis_kosullari(filtre)
+        satir = self.db.query_one(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(s.is_reversed), 0) AS geri, "
+            "  COALESCE(SUM(CASE WHEN s.is_reversed = 0 THEN s.total_amount END), 0) AS net "
+            "  FROM sales s WHERE " + " AND ".join(kosullar),
+            tuple(degerler),
+        )
+        return GecmisOzeti(int(satir["n"]), int(satir["geri"]), int(satir["net"]))
+
+    def detail(self, sale_id: int) -> SatisAyrintisi | None:
+        """Satış ayrıntısı; geri alındıysa ters kaydı da (iade zamanı/günü)."""
+        satis = self.sale(sale_id)
+        if satis is None:
+            return None
+        geri_alma = self.db.query_one(
+            "SELECT * FROM sales WHERE reverses_sale_id = ?", (sale_id,)
+        )
+        return SatisAyrintisi(satis, self.items(sale_id), geri_alma)
 
     def sale(self, sale_id: int) -> sqlite3.Row | None:
         return self.db.query_one("SELECT * FROM sales WHERE id = ?", (sale_id,))
