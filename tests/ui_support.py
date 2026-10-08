@@ -101,6 +101,8 @@ class OnayKaydi:
 
     cevap: bool = True
     sorular: list[str] = field(default_factory=list)
+    #: Her sorunun ayrıntı metni (``informativeText``), aynı sırayla.
+    ayrintilar: list[str] = field(default_factory=list)
 
 
 @pytest.fixture
@@ -115,6 +117,7 @@ def onay(monkeypatch) -> OnayKaydi:
 
     def exec_(self):
         kayit.sorular.append(self.text())
+        kayit.ayrintilar.append(self.informativeText())
         return QMessageBox.StandardButton.Ok
 
     def clicked(self):
