@@ -66,13 +66,36 @@ def test_bekleyen_gun_kurali_gorunur_ve_sessizce_ezilmez(ayarlar, services, onay
     assert ayar.current_business_day_start_hour() == ayar.calendar().start_hour_for(bugun)
 
 
-def test_iptal_yalnizca_gelecek_kurallari_siler(services):
+def test_iptal_yalnizca_gelecek_kurallari_siler(duvar_saati, services):
+    # Saat SABİT (öğle): sonuç duvar saatine bağlı olmamalı. M12d son kapıda bu
+    # test gerçek saatle 02:10'da çalışıp düştü (bkz. aşağıdaki gece testi).
+    duvar_saati.git(2026, 10, 8, 12)
     ayar = services.settings
     bugun = ayar.calendar().today()
+    assert bugun == "2026-10-08"
     ayar.set_business_day_start_hour(3, bugun)
     ayar.set_business_day_start_hour(5, shift_days(bugun, 3))
     assert ayar.cancel_pending_business_day_rules() == 1
     assert ayar.current_business_day_start_hour() == 3, "bugünkü kural kalır"
+
+
+def test_gece_bugun_kurali_henuz_baslamadiysa_bekleyen_sayilir(duvar_saati, services):
+    """02:10'da "bugünden itibaren gün 03:00'te başlasın" denirse yeni kurala göre
+    bugünün iş günü HENÜZ başlamamıştır: an dünün iş gününe düşer. Gösterim
+    (bekleyen kural) ile iptal AYNI tanımı kullanır; iptal eski kurala döndürür."""
+    duvar_saati.git(2026, 10, 9, 2, 10)
+    ayar = services.settings
+    assert ayar.calendar().today() == "2026-10-09"           # varsayılan kural 00:00
+    ayar.set_business_day_start_hour(3, "2026-10-09")
+    assert ayar.calendar().today() == "2026-10-08"
+    assert ayar.pending_business_day_rule() == ("2026-10-09", 3), "bekleyen gösterilir"
+    ayar.set_business_day_start_hour(5, "2026-10-12")
+    assert ayar.cancel_pending_business_day_rules() == 2
+    assert ayar.pending_business_day_rule() is None
+    assert ayar.calendar().today() == "2026-10-09", "eski kurala dönüldü"
+    duvar_saati.git(2026, 10, 9, 12)
+    ayar.set_business_day_start_hour(3, "2026-10-09")
+    assert ayar.pending_business_day_rule() is None, "öğlen bugünün kuralı yürürlükte"
 
 
 # ===================== Donanım =============================================
