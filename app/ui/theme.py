@@ -481,6 +481,15 @@ QPushButton#touchRemove:pressed {{ background: {t.danger_pressed_light}; }}
 /* ---- Rozetler ---- */
 #badge {{ border-radius: 6px; padding: 3px 10px; font-size: {m.FONT_SMALL_PT}pt; }}
 
+/* ---- Ayarlar bölüm düğmeleri ---- */
+QPushButton#sectionNav {{
+    text-align: left; padding: 8px 14px; font-weight: 600;
+    min-height: {m.TOUCH_TARGET_MIN - 18}px;
+}}
+QPushButton#sectionNav:checked {{
+    background: {t.cart_light}; border: 2px solid {t.cart}; color: {t.text};
+}}
+
 /* ---- Dokunmatik giriş takımı ---- */
 QPushButton#touchKey {{
     background: {t.surface_alt}; border: 2px solid {t.border}; border-radius: 10px;

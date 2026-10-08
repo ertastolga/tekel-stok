@@ -163,7 +163,7 @@ class MainWindow(QMainWindow):
         from app.ui.pages.home import HomePage
         from app.ui.pages.products import ProductsPage
         from app.ui.pages.quick_sale import QuickSalePage
-        from app.ui.pages.settings_page import SettingsPage
+        from app.ui.pages.settings import SettingsPage
         from app.ui.pages.stock_count import StockCountPage
         from app.ui.pages.stock_entry import StockEntryPage
         from app.ui.pages.stock_status import StockStatusPage
