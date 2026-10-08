@@ -94,6 +94,10 @@ class SettingsService:
         """Hızlı Satış menüde / Ana Ekran'da / F1 ile erişilebilir mi?"""
         return self.get_bool("show_quick_sale", True)
 
+    def cash_change_calculator(self) -> bool:
+        """NAKİT'e dokununca Para Üstü paneli açılsın mı (varsayılan: hayır)?"""
+        return self.get_bool("cash_change_calculator", False)
+
     def ekran_klavyesi(self) -> bool:
         """Kasa arama alanlarında ekran klavyesi mi, fiziksel klavye mi?"""
         return self.get_bool("ekran_klavyesi", True)

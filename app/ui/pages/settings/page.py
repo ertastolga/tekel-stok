@@ -296,6 +296,14 @@ class SettingsPage(Page):
             "show_quick_sale", "Hızlı Satış ekranını göster (menü, Ana Ekran, F1)"
         )
         s.addWidget(self.quick_sale_check)
+        self.change_check = self._check(
+            "cash_change_calculator", "NAKİT'te para üstünü hesapla (alınan tutarı sor)"
+        )
+        s.addWidget(self.change_check)
+        s.addWidget(self._hint(
+            "Kapalıyken NAKİT tek dokunuşla satışı tamamlar. Açıkken alınan tutar "
+            "seçilir ve para üstü ekranda büyük yazılır (tutar kaydedilmez)."
+        ))
         self.pack_check = self._check(
             "pack_confirm_in_sale", "Koli barkodu okutulduğunda satıştan önce sor"
         )

@@ -193,6 +193,15 @@ class MainWindow(QMainWindow):
         self.nav_group.setExclusive(True)
         return rail
 
+    def _update_footer(self) -> None:
+        try:
+            satis_once = self.services.settings.is_sales_first()
+        except Exception:
+            satis_once = False
+        self.nav_footer.setText(
+            f"Sürüm {config.APP_VERSION}\n{shortcuts.footer_hint(satis_once)}"
+        )
+
     def _build_pages(self) -> None:
         from app.ui.pages.barcode_test import BarcodeTestPage
         from app.ui.pages.cart_sale import CartSalePage
@@ -250,6 +259,7 @@ class MainWindow(QMainWindow):
                 self.nav_page_group[sayfa.nav_key] = anahtar
         self.nav_layout.addStretch(1)
         self.apply_nav_visibility()
+        self._update_footer()
 
     def _build_page(self, sinif):
         """Sayfayı ilk istendiğinde kurar, yığına ve yönlendiriciye ekler."""
@@ -549,6 +559,7 @@ class MainWindow(QMainWindow):
         sound.set_enabled(self.services.settings.sound_enabled())
         self.scan_guard.set_window(self.services.settings.duplicate_scan_ms())
         self.apply_nav_visibility()
+        self._update_footer()
         for sayfa in self.pages.hazir().values():
             if hasattr(sayfa, "apply_settings"):
                 try:

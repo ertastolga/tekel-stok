@@ -405,3 +405,114 @@ class KatmanSahibi:
     def _katman_boyutla(self) -> None:
         if self._overlay is not None:
             self._overlay.setGeometry(self.rect())
+
+
+class TenderPanel(KasaOverlay):
+    """F4 — Para Üstü: NAKİT'te alınan tutarı seç, para üstünü gör.
+
+    Hızlı tutara dokunmak satışı o tutarla ONAYLAR (tek dokunuş). "Özel" ile
+    tutar tuş takımından girilir. Alınan tutar toplamdan az olamaz. Tutar
+    kaydedilmez; yalnızca para üstünü hesaplamak içindir.
+    """
+
+    confirmed = Signal(int)
+    cancelled = Signal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__("Para Üstü", parent)
+        from app.ui.widgets.touch_input import TouchNumpad
+
+        self.close_button.setText("Vazgeç")
+        self.close_requested.connect(self.cancelled.emit)
+        self._toplam = 0
+        self.quick_buttons: list[QPushButton] = []
+
+        self.total_label = make_label("", "cartGrandTotal")
+        self.body.addWidget(self.total_label)
+
+        self.quick_row = QHBoxLayout()
+        self.quick_row.setSpacing(8)
+        self.body.addLayout(self.quick_row)
+        self.custom_button = _dokunma_dugmesi("Özel tutar")
+        self.custom_button.clicked.connect(self._ozel_ac)
+        self.quick_row.addWidget(self.custom_button)
+
+        self.custom_frame = QFrame()
+        ozel = QHBoxLayout(self.custom_frame)
+        ozel.setContentsMargins(0, 0, 0, 0)
+        ozel.setSpacing(12)
+        sol = QVBoxLayout()
+        self.display = TouchDisplay("Alınan tutar (TL)", max_length=9)
+        self.display.changed.connect(self._onizle)
+        sol.addWidget(self.display)
+        self.change_label = make_label("", "sectionTitle", wrap=True)
+        sol.addWidget(self.change_label)
+        self.custom_confirm_button = _dokunma_dugmesi("Satışı tamamla", "primary")
+        self.custom_confirm_button.clicked.connect(self._ozel_onayla)
+        sol.addWidget(self.custom_confirm_button)
+        sol.addStretch(1)
+        ozel.addLayout(sol, 1)
+        self.numpad = TouchNumpad(allow_decimal=True, allow_double_zero=True)
+        self.numpad.bind(self.display)
+        ozel.addWidget(self.numpad)
+        self.custom_frame.setVisible(False)
+        self.body.addWidget(self.custom_frame, 1)
+        self.body.addStretch(1)
+
+    def prepare(self, toplam: int) -> None:
+        """Yeni bir tahsilat için paneli kurar (hızlı tutarlar, temiz giriş)."""
+        from app.core.money import nakit_hizli_tutarlar
+
+        self._toplam = int(toplam)
+        self.total_label.setText(f"Toplam: {format_tl(self._toplam)}")
+        for dugme in self.quick_buttons:
+            self.quick_row.removeWidget(dugme)
+            dugme.deleteLater()
+        self.quick_buttons = []
+        for sira, tutar in enumerate(nakit_hizli_tutarlar(self._toplam)):
+            tam = tutar == self._toplam
+            metin = f"Tam {format_tl(tutar)}" if tam else format_tl(tutar)
+            dugme = _dokunma_dugmesi(metin, "primary" if tam else "kasaTool")
+            dugme.setProperty("tutar", tutar)
+            dugme.clicked.connect(lambda _=False, t=tutar: self.confirmed.emit(t))
+            self.quick_row.insertWidget(sira, dugme)
+            self.quick_buttons.append(dugme)
+        self.display.clear_value()
+        self.change_label.setText("")
+        self.custom_frame.setVisible(False)
+        self.notice_label.setVisible(False)
+
+    def _ozel_ac(self) -> None:
+        self.custom_frame.setVisible(True)
+
+    def _girilen(self) -> int | None:
+        from app.core.money import tl_to_kurus
+
+        metin = self.display.value()
+        if not metin:
+            return None
+        try:
+            return tl_to_kurus(metin)
+        except Exception:
+            return None
+
+    def _onizle(self, _metin: str = "") -> None:
+        tutar = self._girilen()
+        if tutar is None:
+            self.change_label.setText("")
+        elif tutar < self._toplam:
+            self.change_label.setText(
+                f"Eksik: {format_tl(self._toplam - tutar)} — alınan tutar toplamdan az."
+            )
+        else:
+            self.change_label.setText(f"Para üstü: {format_tl(tutar - self._toplam)}")
+
+    def _ozel_onayla(self) -> None:
+        tutar = self._girilen()
+        if tutar is None or tutar < self._toplam:
+            sound.error()
+            self._onizle()
+            if tutar is None:
+                self.change_label.setText("Alınan tutarı girin.")
+            return
+        self.confirmed.emit(tutar)

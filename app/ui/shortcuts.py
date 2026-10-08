@@ -47,6 +47,14 @@ FOOTER_HINT = " • ".join(
 )
 
 
+def footer_hint(sales_first: bool = False) -> str:
+    """Menü altı özeti; SALES_FIRST'te "F4 Yeni Müşteri" gösterilmez (plan §4)."""
+    return " • ".join(
+        f"{s.key} {s.label}" for s in SHORTCUTS
+        if s.show_in_footer and not (sales_first and s.action == "yeni_musteri")
+    )
+
+
 def by_action(action: str) -> Shortcut | None:
     for shortcut in SHORTCUTS:
         if shortcut.action == action:

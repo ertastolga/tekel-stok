@@ -66,7 +66,12 @@ from app.ui.widgets.common import (
     make_label,
 )
 from app.ui.widgets.kasa import KasaToolbar, SonucSeridi
-from app.ui.widgets.kasa_overlays import BekleyenlerPanel, KatmanSahibi, UrunAraPanel
+from app.ui.widgets.kasa_overlays import (
+    BekleyenlerPanel,
+    KatmanSahibi,
+    TenderPanel,
+    UrunAraPanel,
+)
 
 log = logging.getLogger(__name__)
 
@@ -101,7 +106,8 @@ SERIT_ORNEKLERI = (
 #: Katman durumları. Okutmayı KABUL ETMEYEN katmanlar burada listelenir.
 KATMAN_BEKLEYENLER = "BEKLEYENLER"
 KATMAN_ARA = "ARA"
-OKUTMA_KAPALI_KATMANLAR = {KATMAN_BEKLEYENLER, "PARA_USTU"}
+KATMAN_PARA_USTU = "PARA_USTU"
+OKUTMA_KAPALI_KATMANLAR = {KATMAN_BEKLEYENLER, KATMAN_PARA_USTU}
 
 #: Ayar okunamazsa kullanılan ekran bekletme süresi.
 #: ``schema.DEFAULT_SETTINGS["customer_display_hold_ms"]`` ile aynı değer.
@@ -128,6 +134,7 @@ class CartSalePage(KatmanSahibi, Page):
         self._katman_baslat()
         self._parked_panel: BekleyenlerPanel | None = None
         self._search_panel: UrunAraPanel | None = None
+        self._tender_panel: TenderPanel | None = None
 
         govde = QWidget()
         duzen = QVBoxLayout(govde)
@@ -266,9 +273,7 @@ class CartSalePage(KatmanSahibi, Page):
         self.cash_button.setMinimumHeight(metrics.PAYMENT_BUTTON_HEIGHT)
         self.cash_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cash_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.cash_button.clicked.connect(
-            lambda: self.complete(PaymentMethod.CASH)
-        )
+        self.cash_button.clicked.connect(self.cash_pressed)
         satir.addWidget(self.cash_button, 1)
 
         self.card_button = QPushButton("KART")
@@ -486,13 +491,48 @@ class CartSalePage(KatmanSahibi, Page):
         self._show_ready()
 
     # ===================== Ödeme =========================================
-    def complete(self, payment_method: str = PaymentMethod.CASH) -> bool:
+    # ===================== Para Üstü (F4) ================================
+    def cash_pressed(self) -> None:
+        """NAKİT: ayar kapalıysa tek dokunuş (V1.1); açıksa Para Üstü paneli."""
+        if not self.services.settings.cash_change_calculator():
+            self.complete(PaymentMethod.CASH)
+            return
+        if self._checkout_busy or self.cart.is_empty:
+            return
+        self._refresh_issues()
+        if self._issues:
+            self.complete(PaymentMethod.CASH)       # aynı ret iletisi
+            return
+        if self._tender_panel is None:
+            self._tender_panel = TenderPanel(self)
+            self._tender_panel.hide()
+            self._tender_panel.confirmed.connect(self._tender_confirmed)
+            self._tender_panel.cancelled.connect(self.close_overlay)
+        self._tender_panel.prepare(self.cart.total)
+        self._open_overlay(KATMAN_PARA_USTU, self._tender_panel, block_scans=True)
+
+    def _tender_confirmed(self, tendered: int) -> None:
+        # Askı jetonu katman kapanırken (finally) bırakılır; satış SONRA yazılır.
+        self.close_overlay()
+        self.complete(PaymentMethod.CASH, tendered=tendered)
+
+    def complete(self, payment_method: str = PaymentMethod.CASH,
+                 tendered: int | None = None) -> bool:
         """Sepeti ÖDEMEYLE tamamlar; satış YAZILDIYSA ``True`` döner.
 
         Varsayılan NAKİT'tir; NAKİT düğmesi ve testler bunu argümansız çağırır.
+        ``tendered``: NAKİT'te alınan tutar (yalnızca para üstü için; kaydedilmez)
+        — GÜNCEL toplamdan az olamaz.
         Genel F10 kısayolu bu metoda ULAŞMAZ (``completes_with_shortcut`` False).
         """
         if self._checkout_busy or self.cart.is_empty:
+            return False
+        if tendered is not None and tendered < self.cart.total:
+            sound.error()
+            self.banner.show_error(
+                "Alınan tutar toplamdan az.",
+                f"Toplam {format_tl(self.cart.total)}, alınan {format_tl(tendered)}.",
+            )
             return False
 
         # Ödeme onayından HEMEN ÖNCE: sepet güncel fiyatlarla aynı mı?
@@ -559,10 +599,11 @@ class CartSalePage(KatmanSahibi, Page):
                 self._publish_display()
                 self._render()
 
-        self._finish_success(sonuc, payment_method, son_tutar)
+        self._finish_success(sonuc, payment_method, son_tutar, tendered)
         return True
 
-    def _finish_success(self, sonuc, payment_method: str, son_tutar: int) -> None:
+    def _finish_success(self, sonuc, payment_method: str, son_tutar: int,
+                        tendered: int | None = None) -> None:
         # Müşteri ekranı EN BAŞTA işlenir ve serbest bırakma zamanlayıcısı
         # hemen kurulur. Aşağıdaki arayüz adımlarından biri hata verse bile
         # ``_display_hold`` MUTLAKA çözülür; aksi hâlde bayrak True kalır,
@@ -581,7 +622,12 @@ class CartSalePage(KatmanSahibi, Page):
         if sonuc.warnings and not self.services.settings.is_sales_first():
             ayrinti += " · stok kontrolü gerekli"
 
-        self.flash.flash("✓ SATIŞ TAMAMLANDI", format_tl(son_tutar), ayrinti)
+        para_ustu = (
+            f"Para üstü: {format_tl(tendered - son_tutar)}"
+            if tendered is not None else ""
+        )
+        self.flash.flash("✓ SATIŞ TAMAMLANDI", format_tl(son_tutar), ayrinti,
+                         extra=para_ustu)
         self.result_stack.setCurrentWidget(self.flash)
 
         self.barcode.setFocus()

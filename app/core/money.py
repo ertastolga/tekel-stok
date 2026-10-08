@@ -110,3 +110,26 @@ def net_amount(line_total: int, vat_rate: int | None, prices_include_vat: bool) 
     if not prices_include_vat:
         return line_total
     return line_total - vat_amount(line_total, vat_rate, True)
+
+
+#: Para üstü hızlı tutarlarının yuvarlandığı TL basamakları (plan §6.4).
+NAKIT_BASAMAKLARI_TL = (10, 50, 100, 500, 1000)
+
+
+def nakit_hizli_tutarlar(toplam: int, en_cok: int = 4) -> list[int]:
+    """Para üstü ekranının hızlı tutarları (kuruş), plan §6.4.
+
+    Toplam sırayla 10, 50, 100, 500 ve 1000 TL'nin katına YUKARI yuvarlanır;
+    tekrarlar atılır, ilk ``en_cok`` tanesi alınır. Toplama EŞİT bir tutar
+    ("Tam") listede kalabilir. Örnek: 347 TL → 350/400/500/1000;
+    1.240 TL → 1.240/1.250/1.300/1.500; 500 TL → 500/1.000.
+    """
+    if toplam <= 0:
+        return []
+    sonuc: list[int] = []
+    for basamak in NAKIT_BASAMAKLARI_TL:
+        adim = basamak * 100
+        tutar = -(-toplam // adim) * adim
+        if tutar not in sonuc:
+            sonuc.append(tutar)
+    return sonuc[:en_cok]

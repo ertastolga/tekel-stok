@@ -670,6 +670,8 @@ DEFAULT_SETTINGS: dict[str, str] = {
     # --- Kasa (V1.2) ---
     # Hızlı Satış gizlenebilir (menü, Ana Ekran kartı, F1).
     "show_quick_sale": "1",
+    # NAKİT'te para üstü hesaplayıcısı (F4). Kapalıyken NAKİT tek dokunuştur.
+    "cash_change_calculator": "0",
     # --- Arayüz ---
     # Kapalı menü grupları (iç ayar). "VARSAYILAN": kipe göre (SALES_FIRST'te
     # STOK kapalı başlar); kullanıcı açıp kapatınca virgüllü liste yazılır.
