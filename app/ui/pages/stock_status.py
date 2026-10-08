@@ -134,7 +134,12 @@ class StockStatusPage(Page):
     def _recompute(self) -> None:
         """Bakım işlemi: önbellekleri defterden yeniden kurar."""
         from app.services.security_service import ProtectedAction
-        from app.ui.dialogs.common_dialogs import ask_confirm, scanning_suspended, show_info
+        from app.ui.dialogs.common_dialogs import (
+            ask_confirm,
+            bekleme_imleci,
+            scanning_suspended,
+            show_info,
+        )
 
         if not self.guard_require(ProtectedAction.STOK_YENIDEN_HESAPLA):
             return
@@ -147,8 +152,9 @@ class StockStatusPage(Page):
             ):
                 return
         try:
-            self.services.inventory.recompute()
-            sorunlar = self.services.db.check_invariants(deep=True)
+            with bekleme_imleci():                 # 100k satışta birkaç saniye (M11)
+                self.services.inventory.recompute()
+                sorunlar = self.services.db.check_invariants(deep=True)
         except Exception:
             log.exception("Yeniden hesaplama başarısız")
             return

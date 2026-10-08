@@ -322,11 +322,18 @@ class CartService:
         return draft_id
 
     def _bugun_bekletilen(self, bugun: str) -> int:
-        """Bu iş gününde bekletilmiş sepet sayısı (etiket numarası için)."""
+        """Bu iş gününde bekletilmiş sepet sayısı (etiket numarası için).
+
+        Yalnızca son 36 saatte bekletilenlere bakılır (bir iş günü en çok ~25
+        saattir): satışa dönen taslaklar tabloda kalır ve tablo yıllar içinde
+        satış sayısı kadar büyür; arama ``ix_cart_drafts_parked`` ile sınırlıdır.
+        """
         takvim = self.settings.calendar()
         satirlar = self.db.query(
             "SELECT parked_at_utc FROM cart_drafts WHERE kind = 'PARKED' "
-            "  AND parked_at_utc IS NOT NULL ORDER BY id DESC LIMIT 200"
+            "  AND parked_at_utc IS NOT NULL AND parked_at_utc >= ? "
+            " ORDER BY parked_at_utc DESC LIMIT 200",
+            (now_utc() - 36 * 3600,),
         )
         from datetime import datetime
 

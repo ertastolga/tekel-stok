@@ -49,7 +49,13 @@ from app.core.pricing_math import YUVARLAMA_ADIMLARI
 from app.core.tr import fmt_date, fmt_datetime
 from app.services.security_service import ProtectedAction
 from app.ui import metrics, sound, theme
-from app.ui.dialogs.common_dialogs import ask_confirm, scanning_suspended, show_error, show_info
+from app.ui.dialogs.common_dialogs import (
+    ask_confirm,
+    bekleme_imleci,
+    scanning_suspended,
+    show_error,
+    show_info,
+)
 from app.ui.pages.base import Page
 from app.ui.pages.settings.keys import BOLUMLER
 from app.ui.widgets.common import PageHeader, make_label, setup_table, stretch_column
@@ -883,7 +889,8 @@ class SettingsPage(Page):
 
     def _backup_now(self) -> None:
         try:
-            yol = self.services.backup.create_manual()
+            with bekleme_imleci():                 # 100k satışta ~1 s (M11)
+                yol = self.services.backup.create_manual()
         except DomainError as hata:
             self._hata(hata)
             return
@@ -908,7 +915,8 @@ class SettingsPage(Page):
                 return
 
         try:
-            bilgi = self.services.backup.inspect(yol)
+            with bekleme_imleci():                 # tam bütünlük denetimi: 100k'da ~5 s
+                bilgi = self.services.backup.inspect(yol)
         except DomainError as hata:
             self._hata(hata)
             return
@@ -926,7 +934,8 @@ class SettingsPage(Page):
             return
 
         try:
-            guvenlik = self.services.backup.restore(yol)
+            with bekleme_imleci():
+                guvenlik = self.services.backup.restore(yol)
         except DomainError as hata:
             self._hata(hata)
             return

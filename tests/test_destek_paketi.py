@@ -136,6 +136,8 @@ def test_kendi_kendini_sinama_ayri_surecte(services, tmp_path):
 
 
 def test_sistem_durumu_sayfasindan(window, qapp, services, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
     monkeypatch.setattr(sp, "_self_test_varsayilan", _stub_self_test)
     window.go_to("sistem_durumu")
     qapp.processEvents()
@@ -143,3 +145,27 @@ def test_sistem_durumu_sayfasindan(window, qapp, services, tmp_path, monkeypatch
     assert not sayfa.include_db_check.isChecked(), "veritabanı varsayılan olarak yok"
     hedef = sayfa.create_support_package(tmp_path / "paket.zip")
     assert hedef is not None and "veritabani.db" not in _uyelik(hedef)
+    assert QApplication.overrideCursor() is None, "bekleme imleci geri alındı"
+
+    def patla(*a, **k):
+        raise RuntimeError("disk dolu")
+
+    monkeypatch.setattr(services.support, "olustur", patla)
+    assert sayfa.create_support_package(tmp_path / "paket2.zip") is None
+    assert QApplication.overrideCursor() is None, "hata olsa da imleç geri alındı"
+
+
+def test_butunluk_bir_kez_denetlenir(services, tmp_path):
+    """Tam bütünlük denetimi hızlı denetimi kapsar: pakette ikisi birden
+    çalışmaz (100k veride saniyeler, M11); satırda tam denetimin sonucu var."""
+    kayit: list[str] = []
+    services.db.conn.set_trace_callback(kayit.append)
+    try:
+        hedef = services.support.olustur(tmp_path / "d.zip", self_test=_stub_self_test)
+    finally:
+        services.db.conn.set_trace_callback(None)
+    assert sum("integrity_check" in sql for sql in kayit) == 1
+    assert not any("quick_check" in sql for sql in kayit)
+    sistem = json.loads(_uyelik(hedef)["sistem.json"])
+    satir = {s["oge"]: s for s in sistem["durum"]}["Tam bütünlük denetimi"]
+    assert satir["deger"] == "sorun yok"

@@ -153,6 +153,7 @@ class SupportPackageService:
 
     def sistem(self, qt_surumu: str = "") -> dict:
         durum = self.backup.status()
+        butunluk, derin = self.system_status.tam_denetim()
         return {
             "uygulama": config.APP_NAME,
             "surum": config.APP_VERSION,
@@ -162,9 +163,9 @@ class SupportPackageService:
             "sqlite": sqlite3.sqlite_version,
             "isletim_sistemi": f"{platform.system()} {platform.release()} {platform.version()}",
             "durum": [{"oge": s.baslik, "deger": s.deger, "durum": s.durum}
-                      for s in self.system_status.satirlar(qt_surumu)],
+                      for s in self.system_status.satirlar(qt_surumu, butunluk=butunluk)],
             "uyarilar": self.system_status.uyarilar(),
-            "derin_denetim": self.system_status.derin_denetim(),
+            "derin_denetim": derin,
             "yedek": {"otomatik": durum["otomatik_sayisi"], "gunluk": durum["gunluk_sayisi"],
                       "diger": durum["elle_sayisi"] - durum["gunluk_sayisi"],
                       "toplam_bayt": durum["toplam_boyut"], "son_yedek_utc": durum["son_yedek_utc"],

@@ -78,3 +78,21 @@ def test_sayfa(window, qapp, services, bira):
     assert durumlar <= set(sd.DURUMLAR.values())
     assert sayfa.run_deep_check() == []
     assert sayfa.deep_result.text() == "Tam denetim: sorun bulunmadı."
+
+
+def test_tam_denetim_sonucu_verilince_hizli_denetim_tekrarlanmaz(services):
+    """Destek paketi tam bütünlük denetimini zaten yapar: hızlı denetim (100k
+    veride ~1 s) ikinci kez çalışmaz, satır tam denetimin sonucunu gösterir (M11)."""
+    kayit: list[str] = []
+    services.db.conn.set_trace_callback(kayit.append)
+    try:
+        satirlar = {s.baslik: s for s in services.system_status.satirlar("Qt", butunluk="ok")}
+    finally:
+        services.db.conn.set_trace_callback(None)
+    assert not any("quick_check" in sql for sql in kayit)
+    assert "Hızlı bütünlük denetimi" not in satirlar
+    assert satirlar["Tam bütünlük denetimi"].durum == sd.IYI
+    bozuk = {s.baslik: s for s in services.system_status.satirlar(
+        "Qt", butunluk="*** in database main *** Page 7: btreeInitPage() returns error code 11")}
+    assert bozuk["Tam bütünlük denetimi"].durum == sd.HATA
+    assert "Page 7" in bozuk["Tam bütünlük denetimi"].deger

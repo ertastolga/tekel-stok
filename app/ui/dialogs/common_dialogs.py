@@ -14,6 +14,7 @@ from contextlib import contextmanager
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
@@ -25,6 +26,16 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui import theme
+
+
+@contextmanager
+def bekleme_imleci():
+    """Saniyeler sürebilen YÖNETİM işlemlerinde kum saati imleci (her durumda geri alınır)."""
+    QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+    try:
+        yield
+    finally:
+        QApplication.restoreOverrideCursor()
 
 
 @contextmanager

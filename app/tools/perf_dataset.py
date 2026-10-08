@@ -32,7 +32,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 #: Üretim kuralları değiştiğinde artırılır (önbelleklenmiş şablonları geçersiz kılar).
-URETICI_SURUMU = 1
+URETICI_SURUMU = 2
 
 #: Sabit bitiş günü: "bugün"e bağlı olsaydı aynı tohum farklı veri üretirdi.
 BITIS_GUNU = datetime(2026, 9, 30)
@@ -47,6 +47,8 @@ class VeriParametreleri:
     geri_alma_orani: float = 0.01
     gunler_arasi_geri_alma_payi: float = 0.3
     sepet_orani: float = 0.6
+    #: Sepetli satışların bu kadarı önce BEKLETİLİP sonra açılır (F1).
+    bekletme_orani: float = 0.02
 
     def anahtar(self) -> str:
         """Önbellek anahtarı: parametreler + üretici sürümü + şema sürümü."""
@@ -230,6 +232,11 @@ def _doldur(svc, p: VeriParametreleri, rng: random.Random, saat, baslangic) -> N
                     sepet = Cart()
                     for pid in secilen:
                         svc.cart.add_product(sepet, pid, quantity=rng.choice([1, 1, 1, 2, 3]))
+                    # Sepetli Satış sepeti otomatik saklar: her satış bir taslak
+                    # satırı bırakır (CHECKED_OUT) — tablo gerçekte böyle büyür.
+                    svc.cart.autosave(sepet)
+                    if rng.random() < p.bekletme_orani:
+                        sepet, _ = svc.cart.resume_parked(svc.cart.park(sepet))
                     yontem = PaymentMethod.CASH if rng.random() < 0.58 else PaymentMethod.CARD
                     satis = svc.cart.checkout(sepet, payment_method=yontem)
                 else:
@@ -267,7 +274,7 @@ def _sayimlar(svc) -> dict:
     tablolar = (
         "products", "product_barcodes", "sales", "sale_items", "stock_movements",
         "purchase_receipts", "purchase_receipt_lines", "count_sessions",
-        "price_history", "daily_sales_rollup",
+        "price_history", "daily_sales_rollup", "cart_drafts",
     )
     sayim = {t: svc.db.scalar(f"SELECT COUNT(*) FROM {t}") for t in tablolar}
     sayim["geri_alma"] = svc.db.scalar(

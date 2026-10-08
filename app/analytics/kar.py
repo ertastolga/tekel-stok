@@ -11,6 +11,14 @@ Aksi hâlde maliyet > 0 ise **"Tahmini maliyet"**, 0 ise **"Maliyeti bilinmiyor"
 Başlıktaki brüt kâr YALNIZCA güvenilir ciro toplam cironun en az %95'i ise
 gösterilir; değilse kâr "kapsanan kısım için" söylenir. Katmanlar sorgu anında
 defterden hesaplanır (saklanmaz).
+
+Sorgu (V1.2 M11): her satış satırının hareketi için iki indeks araması —
+ürünün bu hareketten önceki SON sıfırlanması (``ix_moves_pool_reset``) ve o
+sıfırlanmayla bu hareket arasında kirli giriş var mı (``ix_moves_tainting``).
+Süre dönemdeki satır sayısıyla orantılıdır, geçmişin uzunluğuyla değil. İlk
+sürümdeki pencere fonksiyonlu sorgu (satılan ürünlerin TÜM hareket geçmişini
+tarar; 100k veride 30 gün 2,2 s) testlerde kâhin olarak durur ve sonuçlar
+rastgele defterlerde birebir karşılaştırılır.
 """
 from __future__ import annotations
 
@@ -29,34 +37,31 @@ KATMAN_ADLARI = {
 #: Brüt kâr başlığı için gereken güvenilir ciro payı.
 BASLIK_ESIGI = 0.95
 
+#: Kısmi indekslerin (şema v6) WHERE ifadeleriyle AYNI metin olmalı. İndeksler
+#: ``INDEXED BY`` ile SABİTLENİR: ``PRAGMA optimize`` istatistik yazınca planlayıcı
+#: sıfırlanma araması için genel ``(ürün, id)`` indeksini seçip geçmişte geriye
+#: yürüyordu (100k veride 30 gün 18 ms → 184 ms; 1 yıl 0,25 s → 2,1 s). v6 göçü
+#: indekslerin varlığını garanti eder.
 _KATMAN_SQL = """
-WITH urunler AS (
-    SELECT DISTINCT i.product_id FROM sale_items i JOIN sales s ON s.id = i.sale_id
-     WHERE s.entry_type = 'SALE' AND s.is_reversed = 0 AND s.business_date BETWEEN ? AND ?
-), mv AS (
-    SELECT m.id, m.product_id, m.ref_type, m.ref_id, m.ref_line_id,
-           COALESCE(SUM(CASE WHEN m.balance_after <= 0 THEN 1 ELSE 0 END) OVER (
-               PARTITION BY m.product_id ORDER BY m.id
-               ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS grup,
-           CASE WHEN m.quantity_delta > m.fill_quantity
-                 AND (m.is_estimated_cost = 1 OR COALESCE(m.unit_cost, 0) = 0)
-                THEN 1 ELSE 0 END AS kirli
-      FROM stock_movements m JOIN urunler u ON u.product_id = m.product_id
-), gk AS (
-    SELECT id, ref_type, ref_id, ref_line_id,
-           COALESCE(MAX(kirli) OVER (
-               PARTITION BY product_id, grup ORDER BY id
-               ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS once_kirli
-      FROM mv
-)
 SELECT CASE
          WHEN i.is_estimated_cost = 0 AND i.cost_total > 0
-              AND COALESCE(gk.once_kirli, 0) = 0 THEN 'GUVENILIR'
+              AND NOT EXISTS (
+                  SELECT 1 FROM stock_movements x INDEXED BY ix_moves_tainting
+                   WHERE x.product_id = m.product_id AND x.id < m.id
+                     AND x.quantity_delta > x.fill_quantity
+                     AND (x.is_estimated_cost = 1 OR COALESCE(x.unit_cost, 0) = 0)
+                     AND x.id > COALESCE((
+                         SELECT r.id FROM stock_movements r INDEXED BY ix_moves_pool_reset
+                          WHERE r.product_id = m.product_id AND r.id < m.id
+                            AND r.balance_after <= 0
+                          ORDER BY r.id DESC LIMIT 1), 0))
+              THEN 'GUVENILIR'
          WHEN i.cost_total > 0 THEN 'TAHMINI'
          ELSE 'BILINMIYOR' END AS katman,
        SUM(i.line_total) AS ciro, SUM(i.cost_total) AS maliyet, COUNT(*) AS satir
-  FROM sale_items i JOIN sales s ON s.id = i.sale_id
-  LEFT JOIN gk ON gk.ref_type = 'SALE' AND gk.ref_id = s.id AND gk.ref_line_id = i.id
+  FROM sales s JOIN sale_items i ON i.sale_id = s.id
+  LEFT JOIN stock_movements m
+         ON m.ref_type = 'SALE' AND m.ref_id = s.id AND m.ref_line_id = i.id
  WHERE s.entry_type = 'SALE' AND s.is_reversed = 0 AND s.business_date BETWEEN ? AND ?
  GROUP BY katman
 """
@@ -104,8 +109,7 @@ class MaliyetKapsami:
 
 
 def maliyet_kapsami(db, donem: Donem) -> MaliyetKapsami:
-    parametre = (donem.baslangic, donem.bitis)
     satirlar = {s["katman"]: Katman(s["ciro"], s["maliyet"], s["satir"])
-                for s in db.query(_KATMAN_SQL, (*parametre, *parametre))}
+                for s in db.query(_KATMAN_SQL, (donem.baslangic, donem.bitis))}
     return MaliyetKapsami(donem, satirlar.get(GUVENILIR, Katman()),
                           satirlar.get(TAHMINI, Katman()), satirlar.get(BILINMIYOR, Katman()))

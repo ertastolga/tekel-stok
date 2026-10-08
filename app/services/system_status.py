@@ -75,14 +75,18 @@ class SystemStatusService:
             return DurumSatiri("Hızlı bütünlük denetimi", "sorun yok", IYI)
         return DurumSatiri("Hızlı bütünlük denetimi", metin[:200], HATA)
 
-    def derin_denetim(self) -> list[str]:
-        """Tam bütünlük + derin tutarlılık denetimi (yavaş olabilir; istek üzerine)."""
+    def tam_denetim(self) -> tuple[str, list[str]]:
+        """``(integrity_check sonucu, sorunlar)`` — tam bütünlük + derin tutarlılık."""
         sorunlar = []
         butunluk = self.db.integrity_check()
         if butunluk != "ok":
             sorunlar.append(f"Bütünlük: {butunluk}")
         sorunlar.extend(self.db.check_invariants(deep=True))
-        return sorunlar
+        return butunluk, sorunlar
+
+    def derin_denetim(self) -> list[str]:
+        """Tam bütünlük + derin tutarlılık denetimi (yavaş olabilir; istek üzerine)."""
+        return self.tam_denetim()[1]
 
     def uyarilar(self) -> list[str]:
         notlar = list(self.db.advisories())
@@ -94,7 +98,10 @@ class SystemStatusService:
                 f"({', '.join(tablolar)}). Veri kaybı değildir; destek paketine eklenir.")
         return notlar
 
-    def satirlar(self, qt_surumu: str = "") -> list[DurumSatiri]:
+    def satirlar(self, qt_surumu: str = "", butunluk: str | None = None) -> list[DurumSatiri]:
+        """Durum satırları. ``butunluk`` verilirse (az önce yapılmış TAM bütünlük
+        denetiminin sonucu) hızlı denetim TEKRAR çalıştırılmaz: tam denetim onu
+        zaten kapsar (destek paketi; 100k veride saniyeler kazandırır, M11)."""
         durum = self.backup.status()
         surum = self.db.schema_version()
         hedef = hedef_sema_surumu()
@@ -103,7 +110,9 @@ class SystemStatusService:
             DurumSatiri("Veri şeması", f"v{surum}" + ("" if surum == hedef else f" (beklenen v{hedef})"),
                         IYI if surum == hedef else HATA),
             DurumSatiri("Veri klasörü", f"{config.data_dir()} · {boyut_metni(self.veri_boyutu())}"),
-            self.hizli_denetim(),
+            self.hizli_denetim() if butunluk is None else DurumSatiri(
+                "Tam bütünlük denetimi", "sorun yok" if butunluk == "ok" else butunluk[:200],
+                IYI if butunluk == "ok" else HATA),
         ]
         son = durum["son_yedek_utc"]
         hata = durum["son_hata"]

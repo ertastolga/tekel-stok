@@ -391,6 +391,9 @@ class BackupService:
                 silinen += 1
             except OSError:
                 log.warning("Eski yedek silinemedi: %s", yol)
+                continue
+            # Eski sürümlerin doğrulamada bıraktığı yan dosyalar (D-25).
+            self._remove_sidecars(yol)
         self._manifest_yaz(klasor, liste)
         return silinen
 

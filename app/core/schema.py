@@ -18,7 +18,7 @@ import sqlite3
 from app.core.clock import BEGINNING_OF_TIME, DEFAULT_BUSINESS_DAY_START_HOUR
 from app.core.tr import normalize_name
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 # =========================================================================
@@ -850,6 +850,34 @@ _V5_ALIS_MALIYETI = [
     "NOT NULL DEFAULT 0 CHECK (previous_stamps_captured IN (0,1))",
 ]
 
+#: v6 (V1.2 M11) — Ölçüm ve sorgu planıyla KANITLANMIŞ indeksler (plan §9).
+#: Yalnızca indeks eklenir; veri değişmez.
+#:  * Maliyet katmanı (§5.9): 100k veride 30 günlük kapsam 2,2 s → ~30 ms. İkisi
+#:    de KISMİ indekstir: havuzu sıfırlayan hareketler (``balance_after <= 0``)
+#:    ve "kirli" girişler (değerlenen birimi olan, maliyeti tahmini ya da
+#:    0/NULL). ``app/analytics/kar.py`` bu WHERE ifadelerini AYNEN kullanır.
+#:  * Taslaklar: satışa dönen her otomatik taslak ``cart_drafts``'ta kalır
+#:    (tablo satış sayısıyla büyür). AÇIK taslaklar kısmi indekste (hep küçük;
+#:    gerçek istatistikle planlayıcı v2 indeksini baştan sona tarıyordu),
+#:    "Müşteri n" numarası yalnızca son bekletilenlere bakar, taslak satırları
+#:    taslağa göre aranır/silinir.
+#:  * Başlangıç sayımı (I27): sayımla başlatılmış her ürün için temel sayım
+#:    satırı ürüne göre aranır; istatistiksiz (yeni kurulum) veride indeks
+#:    yokken her ürün için TÜM sayım satırları taranıyordu.
+_V6_OLCULMUS_INDEKSLER = [
+    "CREATE INDEX IF NOT EXISTS ix_moves_pool_reset ON stock_movements(product_id, id) "
+    "WHERE balance_after <= 0",
+    "CREATE INDEX IF NOT EXISTS ix_moves_tainting ON stock_movements(product_id, id) "
+    "WHERE quantity_delta > fill_quantity "
+    "AND (is_estimated_cost = 1 OR COALESCE(unit_cost, 0) = 0)",
+    "CREATE INDEX IF NOT EXISTS ix_cart_drafts_acik ON cart_drafts(kind, id) "
+    "WHERE status = 'OPEN'",
+    "CREATE INDEX IF NOT EXISTS ix_cart_drafts_parked ON cart_drafts(parked_at_utc) "
+    "WHERE parked_at_utc IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS ix_cart_draft_lines_draft ON cart_draft_lines(draft_id)",
+    "CREATE INDEX IF NOT EXISTS ix_count_lines_product ON count_lines(product_id)",
+]
+
 #: Her göç ya SQL metni ya da ``conn`` alan bir fonksiyondur. Göçler bir kez
 #: işlendikten sonra DEĞİŞTİRİLMEZ; yalnızca yeni sürüm eklenir.
 MIGRATIONS: list[tuple[int, list]] = [
@@ -858,4 +886,5 @@ MIGRATIONS: list[tuple[int, list]] = [
     (3, _V3_REFERANS_MALIYET),
     (4, _V4_FIYAT_GRUPLARI),
     (5, _V5_ALIS_MALIYETI),
+    (6, _V6_OLCULMUS_INDEKSLER),
 ]

@@ -17,7 +17,8 @@ import pytest
 from app.core.db import open_database
 from app.tools import perf_dataset, veri_guvenligi
 
-KUCUK = perf_dataset.VeriParametreleri(urun=30, gun=10, satis=200, geri_alma_orani=0.08)
+KUCUK = perf_dataset.VeriParametreleri(urun=30, gun=10, satis=200, geri_alma_orani=0.08,
+                                       bekletme_orani=0.1)
 
 
 @pytest.fixture
@@ -41,6 +42,12 @@ def test_kucuk_veri_her_kayit_turunu_icerir_ve_tutarlidir(karalama):
         assert sonuc.sayimlar["purchase_receipts"] > 0
         assert sonuc.sayimlar["count_sessions"] > 0
         assert sonuc.sayimlar["price_history"] > 0
+        # Sepetli Satış her sepeti otomatik saklar (V1.2 M11): taslak tablosu
+        # gerçekte satış sayısıyla büyür; bazı sepetler bekletilip açılmıştır.
+        assert db.scalar("SELECT COUNT(*) FROM cart_drafts WHERE status = 'CHECKED_OUT'")             == db.scalar("SELECT COUNT(*) FROM sales WHERE entry_type = 'SALE' "
+                         "AND sale_mode = 'SEPET'") > 0
+        assert db.scalar("SELECT COUNT(*) FROM cart_drafts WHERE parked_at_utc IS NOT NULL") > 0
+        assert db.scalar("SELECT COUNT(*) FROM cart_draft_lines") == 0, "satırlar kapanınca silinir"
         assert db.scalar("SELECT COUNT(DISTINCT business_date) FROM sales") == KUCUK.gun
         assert db.scalar("SELECT MAX(business_date) FROM sales") == "2026-09-30"
     finally:

@@ -476,7 +476,11 @@ class Database:
                 target = sqlite3.connect(str(temp))
                 try:
                     kaynak.backup(target)
-                    target.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    # Yedek TEK DOSYADIR (D-25): API canlı verinin WAL başlığını
+                    # da kopyalar; öyle kalırsa yedeği salt okunur açan her
+                    # doğrulama yanına silinemeyen -wal/-shm bırakır. Geri
+                    # yüklenen veri açılışta yine WAL kipine alınır.
+                    target.execute("PRAGMA journal_mode=DELETE")
                 finally:
                     target.close()
                     kaynak.close()
@@ -551,9 +555,11 @@ class Database:
     def check_invariants(self, deep: bool = False) -> list[str]:
         """Değişmezleri denetler. Boş liste = her şey tutarlı.
 
-        Sığ kip açılışta çalışır: ürün sayısıyla orantılı denetimler artı son
-        30 günün satış/alış/sayım denetimleri. ``deep=True`` tüm geçmişi tarar
-        ve yalnızca Bakım ekranından çağrılır.
+        Sığ kip açılışta çalışır: ürün sayısıyla orantılı denetimler, ürün
+        önbelleği ↔ defter toplamları (tek SIRALI geçiş) artı son 30 günün
+        satış/hareket/sayım denetimleri — 100k satışta ~0,4 s (M11). ``deep=True``
+        tüm geçmişi tarar ve yalnızca istek üzerine çalışır (Sistem Durumu, stok
+        yeniden hesaplama, destek paketi, kendi kendini sınama).
 
         Sonuçlar kullanıcıya GÖSTERİLMEZ; log'a yazılır ve Bakım ekranında
         "Yeniden Hesapla" ile onarılabilir.
@@ -561,7 +567,20 @@ class Database:
         problems: list[str] = []
         cutoff = (local_now() - timedelta(days=SHALLOW_WINDOW_DAYS)).strftime(DATE_FORMAT)
         window = "" if deep else " AND s.business_date >= :cutoff"
-        params = {"cutoff": cutoff}
+        # Satır içi (tek satıra bakan) denetimler sığ kipte de SON 30 GÜNLE
+        # sınırlıdır: açılış süresi geçmişin büyüklüğüyle büyümesin (M11,
+        # 100 bin satışta ölçüldü). Tüm geçmiş derin denetimde taranır.
+        pencere = "" if deep else " AND business_date >= :cutoff"
+        # Sayım satırları da (tam sayımlarda ürün sayısı kadar) birikir: sığ
+        # kipte yalnızca son 30 günde tamamlanmış ya da hâlâ açık oturumlar,
+        # oturum indeksiyle (gerçek istatistikle planlayıcı tam taramayı
+        # seçiyordu; indeks v1'den beri var).
+        sayim_penceresi = "" if deep else (
+            " AND cl.session_id IN (SELECT id FROM count_sessions "
+            "  WHERE status <> 'COMMITTED' OR committed_at_utc >= :cutoff_utc)")
+        sayim = "count_lines cl" if deep else "count_lines cl INDEXED BY ix_count_lines_session"
+        cutoff_utc = int((local_now() - timedelta(days=SHALLOW_WINDOW_DAYS)).timestamp())
+        params = {"cutoff": cutoff, "cutoff_utc": cutoff_utc}
 
         def check(sql: str, message: str, args: dict | None = None) -> None:
             count = self.scalar(sql, args or {}, default=0)
@@ -569,16 +588,21 @@ class Database:
                 problems.append(message.format(n=count))
 
         # --- Ürün önbelleği ↔ defter -------------------------------------
+        # Defter toplamları ``NOT INDEXED`` ile SIRALI taranır: indeks
+        # sırasıyla (ürün, id) gezmek her satır için rastgele sayfa okuması
+        # demektir — 100 bin satışlık veride 1,2 s'ye karşı 0,13 s (M11).
         check(
             "SELECT COUNT(*) FROM products p "
-            "LEFT JOIN (SELECT product_id, SUM(quantity_delta) q FROM stock_movements "
+            "LEFT JOIN (SELECT product_id, SUM(quantity_delta) q "
+            "             FROM stock_movements NOT INDEXED "
             "           GROUP BY product_id) m ON m.product_id = p.id "
             "WHERE p.current_stock <> COALESCE(m.q, 0)",
             "I1: {n} üründe stok önbelleği defterle uyuşmuyor.",
         )
         check(
             "SELECT COUNT(*) FROM products p "
-            "LEFT JOIN (SELECT product_id, SUM(value_delta) v FROM stock_movements "
+            "LEFT JOIN (SELECT product_id, SUM(value_delta) v "
+            "             FROM stock_movements NOT INDEXED "
             "           GROUP BY product_id) m ON m.product_id = p.id "
             "WHERE p.stock_value <> MAX(COALESCE(m.v, 0), 0)",
             "I2: {n} üründe stok değeri defterle uyuşmuyor.",
@@ -618,14 +642,15 @@ class Database:
         # --- Zaman damgaları / hareket türü ------------------------------
         check(
             "SELECT COUNT(*) FROM sales "
-            "WHERE local_hour NOT BETWEEN 0 AND 23 OR local_dow NOT BETWEEN 0 AND 6",
-            "I21: {n} satışta geçersiz saat/gün bilgisi.",
+            "WHERE (local_hour NOT BETWEEN 0 AND 23 OR local_dow NOT BETWEEN 0 AND 6)"
+            + pencere,
+            "I21: {n} satışta geçersiz saat/gün bilgisi.", params,
         )
         check(
             "SELECT COUNT(*) FROM stock_movements "
-            "WHERE (movement_type IN ('PURCHASE','INITIAL_STOCK') AND value_delta < 0) "
-            "   OR (movement_type = 'SALE' AND value_delta > 0)",
-            "I22: {n} hareket, türüyle çelişen bir değer taşıyor.",
+            "WHERE ((movement_type IN ('PURCHASE','INITIAL_STOCK') AND value_delta < 0) "
+            "   OR (movement_type = 'SALE' AND value_delta > 0))" + pencere,
+            "I22: {n} hareket, türüyle çelişen bir değer taşıyor.", params,
         )
 
         # --- Giren malın değer formülü (delik kapatma) -------------------
@@ -633,15 +658,15 @@ class Database:
             "SELECT COUNT(*) FROM stock_movements "
             "WHERE movement_type IN ('INITIAL_STOCK','PURCHASE') "
             "  AND unit_cost IS NOT NULL "
-            "  AND value_delta <> (quantity_delta - fill_quantity) * unit_cost",
-            "I25: {n} mal girişinde değer hesabı hatalı.",
+            "  AND value_delta <> (quantity_delta - fill_quantity) * unit_cost" + pencere,
+            "I25: {n} mal girişinde değer hesabı hatalı.", params,
         )
         check(
             "SELECT COUNT(*) FROM stock_movements "
-            "WHERE fill_quantity < 0 "
+            "WHERE (fill_quantity < 0 "
             "   OR fill_quantity > MAX(0, -(balance_after - quantity_delta)) "
-            "   OR fill_quantity > ABS(quantity_delta)",
-            "I26: {n} harekette açık kapatma miktarı tutarsız.",
+            "   OR fill_quantity > ABS(quantity_delta))" + pencere,
+            "I26: {n} harekette açık kapatma miktarı tutarsız.", params,
         )
 
         # --- Başlangıç stoğu ----------------------------------------------
@@ -662,7 +687,7 @@ class Database:
             "I27: {n} ürünün başlangıç stoğu kaydı tutarsız.",
         )
         check(
-            "SELECT COUNT(*) FROM (SELECT product_id FROM stock_movements "
+            "SELECT COUNT(*) FROM (SELECT product_id FROM stock_movements NOT INDEXED "
             " WHERE movement_type = 'INITIAL_STOCK' GROUP BY product_id HAVING COUNT(*) > 1)",
             "I28: {n} ürüne birden fazla başlangıç stoğu girilmiş.",
         )
@@ -767,31 +792,37 @@ class Database:
 
         # --- Sayım ---------------------------------------------------------
         check(
-            "SELECT COUNT(*) FROM count_lines cl JOIN count_sessions cs ON cs.id = cl.session_id "
+            f"SELECT COUNT(*) FROM {sayim} JOIN count_sessions cs ON cs.id = cl.session_id "
             "WHERE cs.status = 'COMMITTED' AND cl.coverage_state = 'FULL' "
             "  AND cl.counted_qty IS NOT NULL "
-            "  AND cl.difference <> cl.counted_qty - cl.system_qty_final",
+            "  AND cl.difference <> cl.counted_qty - cl.system_qty_final" + sayim_penceresi,
             "I17: {n} sayım satırının farkı hatalı.",
+            params,
         )
         check(
-            "SELECT COUNT(*) FROM count_lines cl JOIN count_sessions cs ON cs.id = cl.session_id "
+            f"SELECT COUNT(*) FROM {sayim} JOIN count_sessions cs ON cs.id = cl.session_id "
             "WHERE cs.status = 'COMMITTED' AND cl.coverage_state = 'FULL' "
             "  AND cl.difference IS NOT NULL AND cl.difference <> 0 "
-            "  AND cl.adjustment_movement_id IS NULL",
+            "  AND cl.adjustment_movement_id IS NULL" + sayim_penceresi,
             "I18: {n} sayım farkı stoğa yansımamış.",
+            params,
         )
         check(
-            "SELECT COUNT(*) FROM count_lines "
-            "WHERE coverage_state = 'PARTIAL' AND adjustment_movement_id IS NOT NULL",
+            f"SELECT COUNT(*) FROM {sayim} "
+            "WHERE cl.coverage_state = 'PARTIAL' AND cl.adjustment_movement_id IS NOT NULL"
+            + sayim_penceresi,
             "I29: {n} kısmi sayım satırı stoğu değiştirmiş.",
+            params,
         )
         check(
-            "SELECT COUNT(*) FROM count_lines cl WHERE cl.counted_qty IS NOT NULL "
+            f"SELECT COUNT(*) FROM {sayim} WHERE cl.counted_qty IS NOT NULL "
             "  AND cl.counted_qty <> (SELECT COALESCE(SUM(ll.counted_qty), 0) "
             "                           FROM count_line_locations ll "
             "                          WHERE ll.session_id = cl.session_id "
-            "                            AND ll.product_id = cl.product_id)",
+            "                            AND ll.product_id = cl.product_id)"
+            + sayim_penceresi,
             "I30: {n} sayım satırının konum toplamları uyuşmuyor.",
+            params,
         )
 
         if deep:
@@ -854,12 +885,14 @@ class Database:
                     "                            WHERE h.batch_id = b.id)",
                     "I36: {n} toplu fiyat grubunun ürün sayısı geçmişle uyuşmuyor.",
                 )
+            # Tek geçiş: her satırın bakiyesi, kendi ürününün o satıra
+            # kadarki toplamıyla karşılaştırılır (öz-birleşme gerekmez).
             check(
-                "SELECT COUNT(*) FROM stock_movements m JOIN "
-                "  (SELECT id, SUM(quantity_delta) OVER (PARTITION BY product_id "
+                "SELECT COUNT(*) FROM "
+                "  (SELECT balance_after, SUM(quantity_delta) OVER (PARTITION BY product_id "
                 "          ORDER BY id ROWS UNBOUNDED PRECEDING) AS running "
-                "     FROM stock_movements) w ON w.id = m.id "
-                "WHERE m.balance_after <> w.running",
+                "     FROM stock_movements NOT INDEXED) "
+                "WHERE balance_after <> running",
                 "I24: {n} hareket satırında bakiye izi hatalı.",
             )
 

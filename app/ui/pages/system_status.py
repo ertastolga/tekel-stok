@@ -23,7 +23,12 @@ from PySide6.QtWidgets import (
 from app.core.clock import local_now
 from app.services.system_status import DURUMLAR
 from app.ui import metrics
-from app.ui.dialogs.common_dialogs import scanning_suspended, show_error, show_info
+from app.ui.dialogs.common_dialogs import (
+    bekleme_imleci,
+    scanning_suspended,
+    show_error,
+    show_info,
+)
 from app.ui.pages.base import Page
 from app.ui.widgets.common import Card, PageHeader, make_label, setup_table, stretch_column
 
@@ -97,8 +102,9 @@ class SystemStatusPage(Page):
 
     def refresh(self) -> None:
         try:
-            satirlar = self.services.system_status.satirlar(qt_surumu())
-            uyarilar = self.services.system_status.uyarilar()
+            with bekleme_imleci():                  # hızlı denetim büyük veride ~1 s
+                satirlar = self.services.system_status.satirlar(qt_surumu())
+                uyarilar = self.services.system_status.uyarilar()
         except Exception:
             log.exception("Sistem durumu okunamadı")
             return
@@ -113,7 +119,8 @@ class SystemStatusPage(Page):
     def run_deep_check(self) -> list[str]:
         """Tam bütünlük + derin tutarlılık denetimi (istek üzerine)."""
         try:
-            sorunlar = self.services.system_status.derin_denetim()
+            with bekleme_imleci():
+                sorunlar = self.services.system_status.derin_denetim()
         except Exception:
             log.exception("Tam denetim yapılamadı")
             self.deep_result.setText("Denetim yapılamadı; kayıt dosyasına yazıldı.")
@@ -141,9 +148,10 @@ class SystemStatusPage(Page):
             for olay, sonuc in self.main_window.router.diagnostics(200)
         ]
         try:
-            hedef = self.services.support.olustur(
-                yol, veritabani_ekle=veritabani_ekle, tanilama=tanilama,
-                qt_surumu=qt_surumu())
+            with bekleme_imleci():
+                hedef = self.services.support.olustur(
+                    yol, veritabani_ekle=veritabani_ekle, tanilama=tanilama,
+                    qt_surumu=qt_surumu())
         except Exception as hata:
             log.exception("Destek paketi oluşturulamadı")
             show_error(self, "Destek paketi oluşturulamadı.", str(hata))

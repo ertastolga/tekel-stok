@@ -234,3 +234,43 @@ def test_durum_ozeti(yedek, services, bira):
     assert durum["otomatik_sayisi"] == 1 and durum["elle_sayisi"] == 1
     assert durum["toplam_boyut"] > 0 and durum["bos_alan_veri"] and durum["bos_alan_yedek"]
     assert durum["son_hata"] is None
+
+
+# ===================== Tek dosya yedekler (D-25) ===========================
+def _yan_dosyalar(klasor: Path) -> list[str]:
+    return sorted(p.name for p in klasor.glob("*") if p.name.endswith(("-wal", "-shm")))
+
+
+def test_yedek_tek_dosyadir_ve_dogrulama_yan_dosya_birakmaz(duvar_saati, services, bira):
+    """D-25: yedekleme API'si canlı verinin WAL başlığını kopyalıyordu; yedeği
+    salt okunur açan her doğrulama (inspect, göç öncesi denetim) yanına -wal/-shm
+    bırakıyor ve saklama bunları hiç silmiyordu — her yedek için iki yetim dosya."""
+    yedek = services.backup
+    duvar_saati.git(2026, 10, 5, 12)
+    services.inventory.set_initial_stock(bira, 48, unit_cost=5000)
+    yollar = [yedek.create_manual(), yedek.create_auto(), yedek.create_daily(),
+              yedek.create_safety_backup(ICE_AKTARMA_YEDEK_ONEKI)]
+    for yol in yollar:
+        assert yedek.inspect(yol).schema_version == services.db.schema_version()
+    yedek.list_backups()
+    for yol in yollar:
+        assert yol.read_bytes()[18:20] == b"\x01\x01", f"{yol.name}: geri alma günlüklü tek dosya"
+    for klasor in {y.parent for y in yollar}:
+        assert _yan_dosyalar(klasor) == [], klasor
+
+
+def test_saklama_silinen_yedegin_yan_dosyalarini_da_siler(yedek, services, bira):
+    """Eski sürümlerin bıraktığı yan dosyalar, ait oldukları yedek silinirken
+    temizlenir; başkasının dosyasının yan dosyasına dokunulmaz."""
+    services.settings.set("auto_backup_retention", 1)
+    klasor = yedek.auto_dir()
+    _degistir(services, bira)
+    eski = yedek.create_auto()
+    for ek in ("-wal", "-shm"):
+        Path(str(eski) + ek).write_bytes(b"")
+    yabanci = _bos_db(klasor / "notlar.db")
+    Path(str(yabanci) + "-wal").write_bytes(b"")
+    _degistir(services, bira)
+    yeni = yedek.create_auto()
+    assert yeni.exists() and not eski.exists()
+    assert _yan_dosyalar(klasor) == ["notlar.db-wal"]
