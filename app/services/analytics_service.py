@@ -16,6 +16,10 @@ ile, GERİ ALMA gününe göre okunur (kasa sayımı için).
 KESİN ve TAHMİNİ veri asla karıştırılmaz: sepet satışları gerçek müşteri
 sepetidir; Hızlı Satış'tan türetilen gruplar yalnızca TAHMİNDİR ve öyle
 etiketlenir.
+
+V1.2 (M8a): bu sınıf ``app.analytics`` modüllerinin CEPHESİDİR. V1.1 yöntemleri
+aynen kalır; yeni (Analiz V2) yöntemleri sonuçları ``(sorgu, dönem,
+data_version)`` anahtarıyla önbelleğe alır — veri değişince önbellek boşalır.
 """
 from __future__ import annotations
 
@@ -23,9 +27,18 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import timedelta
 
+from app.analytics import donemler, egilimler, kar, ozet, sepetler
+from app.analytics import urunler as urun_analizi
 from app.core.clock import shift_days
 from app.core.db import Database
 from app.core.tr import DATE_FORMAT
+
+#: ``egilim`` türleri.
+SAATLIK = "SAATLIK"
+HAFTANIN_GUNU = "HAFTANIN_GUNU"
+GUNLUK = "GUNLUK"
+HAFTALIK = "HAFTALIK"
+AYLIK = "AYLIK"
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +161,83 @@ class AnalyticsService:
         self.settings = settings
         self.inventory = inventory
         self.products = products
+        self._onbellek: dict = {}
+        self._onbellek_surumu: int | None = None
+
+    # ===================== Analiz V2 (cephe) =============================
+    def _onbellekli(self, anahtar: tuple, hesapla):
+        """``(sorgu, dönem…)`` + ``data_version`` anahtarlı önbellek."""
+        surum = self.db.data_version()
+        if surum != self._onbellek_surumu:
+            self._onbellek.clear()
+            self._onbellek_surumu = surum
+        if anahtar not in self._onbellek:
+            self._onbellek[anahtar] = hesapla()
+        return self._onbellek[anahtar]
+
+    def is_gunu(self) -> str:
+        return self.settings.calendar().today()
+
+    def donem(self, tur: str, baslangic: str | None = None,
+              bitis: str | None = None) -> donemler.Donem:
+        if tur == donemler.OZEL:
+            return donemler.ozel(baslangic, bitis)
+        return donemler.hazir(tur, self.is_gunu())
+
+    @staticmethod
+    def karsilastirmalar(donem: donemler.Donem) -> list[donemler.Donem]:
+        return donemler.karsilastirmalar(donem)
+
+    def genel(self, donem: donemler.Donem) -> ozet.GenelBakis:
+        return self._onbellekli(("genel", donem), lambda: ozet.genel_bakis(self.db, donem))
+
+    def egilim(self, tur: str, donem: donemler.Donem) -> list[egilimler.Nokta]:
+        islevler = {
+            SAATLIK: lambda: egilimler.saatlik(
+                self.db, donem, self.settings.current_business_day_start_hour()),
+            HAFTANIN_GUNU: lambda: egilimler.haftanin_gunu(self.db, donem),
+            GUNLUK: lambda: egilimler.gunluk(self.db, donem),
+            HAFTALIK: lambda: egilimler.haftalik(self.db, donem),
+            AYLIK: lambda: egilimler.aylik(self.db, donem),
+        }
+        return self._onbellekli(("egilim", tur, donem), islevler[tur])
+
+    def en_cok_satanlar(self, donem: donemler.Donem, ciroya_gore: bool = False,
+                        limit: int = 20) -> list[urun_analizi.UrunSatiri]:
+        islev = urun_analizi.en_cok_ciro if ciroya_gore else urun_analizi.en_cok_adet
+        return self._onbellekli(("encok", ciroya_gore, limit, donem),
+                                lambda: islev(self.db, donem, limit))
+
+    def az_satanlar(self, donem: donemler.Donem,
+                    limit: int = 20) -> list[urun_analizi.UrunSatiri]:
+        return self._onbellekli(("az", limit, donem),
+                                lambda: urun_analizi.az_satanlar(self.db, donem, limit))
+
+    def kategori_kirilimi(self, donem: donemler.Donem) -> list[urun_analizi.UrunSatiri]:
+        return self._onbellekli(("kategori", donem),
+                                lambda: urun_analizi.kategoriler(self.db, donem))
+
+    def marka_kirilimi(self, donem: donemler.Donem) -> list[urun_analizi.UrunSatiri]:
+        return self._onbellekli(("marka", donem),
+                                lambda: urun_analizi.markalar(self.db, donem))
+
+    def urun_egilimi(self, product_id: int, donem: donemler.Donem):
+        return self._onbellekli(("urun", product_id, donem),
+                                lambda: urun_analizi.urun_egilimi(self.db, product_id, donem))
+
+    def urun_ciftleri(self, donem: donemler.Donem,
+                      en_az_destek: int = sepetler.VARSAYILAN_EN_AZ_DESTEK):
+        return self._onbellekli(("cift", en_az_destek, donem),
+                                lambda: sepetler.urun_ciftleri(self.db, donem, en_az_destek))
+
+    def kategori_ciftleri(self, donem: donemler.Donem,
+                          en_az_destek: int = sepetler.VARSAYILAN_EN_AZ_DESTEK):
+        return self._onbellekli(
+            ("kcift", en_az_destek, donem),
+            lambda: sepetler.kategori_ciftleri(self.db, donem, en_az_destek))
+
+    def maliyet_kapsami(self, donem: donemler.Donem) -> kar.MaliyetKapsami:
+        return self._onbellekli(("kar", donem), lambda: kar.maliyet_kapsami(self.db, donem))
 
     # ===================== Dönem özetleri ================================
     def summary(self, start: str, end: str) -> PeriodSummary:
