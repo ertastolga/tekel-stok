@@ -31,6 +31,7 @@ from app.services.security_service import SecurityService
 from app.services.session_grouping_service import SessionGroupingService
 from app.services.settings_service import SettingsService
 from app.services.supplier_service import SupplierService
+from app.services.support_package import SupportPackageService
 from app.services.system_status import SystemStatusService
 
 
@@ -59,6 +60,7 @@ class Services:
     imports: ImportService
     hardware: HardwareStatusService
     system_status: SystemStatusService
+    support: SupportPackageService
 
     def close(self) -> None:
         self.display.close()
@@ -91,6 +93,7 @@ def build_services(db: Database) -> Services:
     payments = PaymentService()
     display = CustomerDisplayService()
     hardware = HardwareStatusService(display, payments)
+    system_status = SystemStatusService(db, settings, backup, hardware)
     return Services(
         db=db,
         settings=settings,
@@ -114,7 +117,8 @@ def build_services(db: Database) -> Services:
         pricing=pricing,
         imports=imports,
         hardware=hardware,
-        system_status=SystemStatusService(db, settings, backup, hardware),
+        system_status=system_status,
+        support=SupportPackageService(db, settings, system_status, backup),
     )
 
 

@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtWidgets import (
+    QCheckBox,
+    QFileDialog,
     QHBoxLayout,
     QListWidget,
     QPushButton,
@@ -18,8 +20,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.core.clock import local_now
 from app.services.system_status import DURUMLAR
 from app.ui import metrics
+from app.ui.dialogs.common_dialogs import scanning_suspended, show_error, show_info
 from app.ui.pages.base import Page
 from app.ui.widgets.common import Card, PageHeader, make_label, setup_table, stretch_column
 
@@ -69,10 +73,22 @@ class SystemStatusPage(Page):
         satir.addWidget(self.deep_button)
         self.deep_result = make_label("", "cardHint", wrap=True)
         satir.addWidget(self.deep_result, 1)
+        kart.body.addLayout(satir)
+        destek = QHBoxLayout()
+        self.include_db_check = QCheckBox("Veritabanı kopyası ekle (önerilmez)")
+        self.include_db_check.setToolTip(
+            "Yalnızca destek açıkça isterse. PIN bilgileri silinir, kişisel klasör yolları "
+            "gizlenir; yine de satış ve ürün verilerinizi içerir.")
+        destek.addWidget(self.include_db_check)
+        destek.addStretch(1)
         self.support_button = QPushButton("Destek paketi oluştur…")
         self.support_button.clicked.connect(self._destek_paketi)
-        satir.addWidget(self.support_button)
-        kart.body.addLayout(satir)
+        destek.addWidget(self.support_button)
+        kart.body.addLayout(destek)
+        kart.body.addWidget(make_label(
+            "Destek paketi; sistem bilgisi, ayarlar (PIN hariç), kayıt dosyaları ve "
+            "sınama raporunu tek ZIP dosyasında toplar. Kişisel klasör yolları gizlenir. "
+            "Veritabanı varsayılan olarak EKLENMEZ.", "cardHint", wrap=True))
         duzen.addWidget(kart, 1)
         self.root.addWidget(govde, 1)
 
@@ -109,5 +125,29 @@ class SystemStatusPage(Page):
         return sorunlar
 
     def _destek_paketi(self) -> None:
-        """M10d'de doldurulur."""
-        self.notify("Destek paketi henüz hazır değil.")
+        varsayilan = f"tekelstok_destek_{local_now():%Y%m%d_%H%M}.zip"
+        with scanning_suspended(self.main_window.router):
+            yol, _ = QFileDialog.getSaveFileName(
+                self, "Destek paketini kaydet",
+                str(self.services.backup.manual_dir() / varsayilan), "ZIP (*.zip)")
+        if yol:
+            self.create_support_package(yol, self.include_db_check.isChecked())
+
+    def create_support_package(self, yol, veritabani_ekle: bool = False):
+        tanilama = [
+            {"kod": olay.code, "sonuc": sonuc.value, "tus": olay.key_count,
+             "ort_ara_ms": round(olay.avg_gap_ms, 1), "en_uzun_ara_ms": round(olay.max_gap_ms, 1),
+             "sonlandirici": olay.terminator, "kaynak": olay.source}
+            for olay, sonuc in self.main_window.router.diagnostics(200)
+        ]
+        try:
+            hedef = self.services.support.olustur(
+                yol, veritabani_ekle=veritabani_ekle, tanilama=tanilama,
+                qt_surumu=qt_surumu())
+        except Exception as hata:
+            log.exception("Destek paketi oluşturulamadı")
+            show_error(self, "Destek paketi oluşturulamadı.", str(hata))
+            return None
+        with scanning_suspended(self.main_window.router):
+            show_info(self, "Destek paketi hazır", f"Kaydedildi: {hedef}")
+        return hedef
