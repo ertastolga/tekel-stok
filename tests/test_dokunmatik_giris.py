@@ -102,6 +102,11 @@ def test_buyuk_harf_turkce_kurala_uyar(qapp):
 
 def test_tuslar_dokunma_boyutunda_ve_odak_almaz(qapp):
     for gerec in (TouchKeyboard(), TouchNumpad()):
+        # Gösterilip stil sayfasıyla CİLALANDIKTAN sonra ölçülür (V1.2 M3c:
+        # cilalanmamış ölçüm, stil sayfasının 28 px'e indirdiği tuşları kaçırdı).
+        gerec.resize(gerec.minimumSizeHint())
+        gerec.show()
+        qapp.processEvents()
         dugmeler = gerec.findChildren(QPushButton)
         assert dugmeler
         for dugme in dugmeler:

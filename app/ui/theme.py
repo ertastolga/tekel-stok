@@ -506,10 +506,16 @@ QPushButton#sectionNav:checked {{
 }}
 
 /* ---- Dokunmatik giriş takımı ---- */
+/* Stil sayfasındaki min-height, koddaki setFixedSize / setMinimumHeight'i
+   cilalamada EZER; dokunma hedefleri bu yüzden burada da 56 px'e sabitlenir.
+   [dokunma="evet"]: varsayılan dolgu (9 px) + kenar (1 px) ile toplam 56 px. */
+QPushButton[dokunma="evet"] {{ min-height: {m.TOUCH_TARGET_MIN - 20}px; }}
 QPushButton#touchKey {{
     background: {t.surface_alt}; border: 2px solid {t.border}; border-radius: 10px;
     font-size: {m.FONT_SECTION_PT}pt; font-weight: 600; padding: 0px;
+    min-height: {m.TOUCH_TARGET_MIN - 4}px;
 }}
+QPushButton#searchResult {{ text-align: left; padding: 9px 14px; }}
 QPushButton#touchKey:hover   {{ background: {t.step_hover}; border-color: {t.nav_active}; }}
 QPushButton#touchKey:pressed {{ background: {t.step_pressed}; }}
 QPushButton#touchKey:checked {{

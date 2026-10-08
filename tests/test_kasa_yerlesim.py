@@ -124,3 +124,29 @@ def test_diger_islemler_menusu_engellemeden_acilir(window, qapp, services, bira)
     sayfa.handle_scan(ScanEvent(code=BIRA))
     assert sayfa.clear_button.isEnabled() and not sayfa.undo_button.isEnabled()
     assert sayfa.total_caption.text() == "TOPLAM · 1 ürün"
+
+
+def test_katmanlardaki_her_dugme_dokunma_boyutunda_ve_katman_sigar(
+    window, qapp, services, bira
+):
+    """Katmanlar 1000×600'de sığar; içlerindeki düğmeler (klavye tuşları dahil)
+    stil sayfası cilasından SONRA da en az 56 px'tir (V1.2 M3c bulgusu)."""
+    sayfa = _hazirla(window, qapp, (1000, 600), "sepetli_satis")
+    sepet = services.cart.new_cart()
+    services.cart.add_product(sepet, bira)
+    services.cart.park(sepet)
+    for ac in (sayfa.open_search, sayfa.show_parked):
+        ac()
+        qapp.processEvents()
+        katman = sayfa._overlay
+        assert katman.minimumSizeHint().height() <= sayfa.height()
+        if hasattr(katman, "keyboard"):
+            katman.set_query("t")
+            katman.search_now()
+            qapp.processEvents()
+        kucuk = [
+            (d.text(), d.height()) for d in katman.findChildren(QPushButton)
+            if d.isVisibleTo(katman) and d.height() < metrics.TOUCH_TARGET_MIN
+        ]
+        assert kucuk == []
+        sayfa.close_overlay()

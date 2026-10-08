@@ -99,6 +99,7 @@ class SettingsPage(Page):
 
         kurucular = {
             "kasa": self._build_kasa,
+            "gorunum": self._build_gorunum,
             "ses": self._build_ses,
             "barkod": self._build_barkod,
             "isletme": self._build_isletme,
@@ -328,6 +329,24 @@ class SettingsPage(Page):
         index = kutu.findData(deger)
         if index >= 0:
             kutu.setCurrentIndex(index)
+
+    # ===================== Görünüm =======================================
+    def _build_gorunum(self) -> QWidget:
+        icerik, duzen = self._bolum_kutusu()
+        kutu = QGroupBox("Giriş")
+        k = QVBoxLayout(kutu)
+        self.keyboard_check = self._check(
+            "ekran_klavyesi", "Kasa'da arama için ekran klavyesini kullan"
+        )
+        k.addWidget(self.keyboard_check)
+        k.addWidget(self._hint(
+            "Klavyesiz dokunmatik kasada açık kalmalıdır. Klavyeli bir "
+            "bilgisayarda kapatırsanız arama alanına klavyeyle yazılır; okutulan "
+            "bir barkod yazdığınız metni bozmaz."
+        ))
+        duzen.addWidget(kutu)
+        duzen.addStretch(1)
+        return icerik
 
     # ===================== Ses ===========================================
     def _build_ses(self) -> QWidget:

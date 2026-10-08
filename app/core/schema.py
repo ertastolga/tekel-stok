@@ -674,6 +674,8 @@ DEFAULT_SETTINGS: dict[str, str] = {
     # Kapalı menü grupları (iç ayar). "VARSAYILAN": kipe göre (SALES_FIRST'te
     # STOK kapalı başlar); kullanıcı açıp kapatınca virgüllü liste yazılır.
     "nav_collapsed_groups": "VARSAYILAN",
+    # Ürün Ara vb. alanlarda ekran klavyesi (klavyesiz dokunmatik kasa).
+    "ekran_klavyesi": "1",
     "sound_enabled": "1",
     "window_geometry": "",
     "window_maximized": "0",

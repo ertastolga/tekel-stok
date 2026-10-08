@@ -114,6 +114,59 @@ class ProductService:
             rows = [r for r in rows if search_matches(r["name"], needle)] or rows
         return rows
 
+    def search_for_sale(self, query: str, limit: int = 30) -> list[sqlite3.Row]:
+        """Kasa "Ürün Ara": barkodu okunamayan ürünü bulup sepete eklemek için.
+
+        * Yalnızca SATILABİLİR ürünler: aktif ve fiyatı girilmiş.
+        * Çok kelimeli arama: her kelime ad YA DA marka içinde geçmeli (VE);
+          "efes 50" → "Efes Pilsen 50 cl". Türkçe ve aksan duyarsız.
+        * Rakamlardan oluşan en az 3 karakterlik sorgu barkodda da aranır
+          (önce baştan eşleşenler).
+        Sonuçlar tahmin edilebilir: bulanık eşleşme YOKTUR.
+        """
+        metin = (query or "").strip()
+        kelimeler = normalize_name(metin).split()
+        if not kelimeler:
+            return []
+
+        def kacis(deger: str) -> str:
+            return deger.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+        ad_kosulu = " AND ".join(
+            "(p.name_norm || ' ' || COALESCE(br.name_norm, '')) LIKE ? ESCAPE '\\'"
+            for _ in kelimeler
+        )
+        params: list = [f"%{kacis(k)}%" for k in kelimeler]
+        kod = "".join(metin.split())
+        barkodla = kod.isdigit() and len(kod) >= 3
+        kosul = f"({ad_kosulu})"
+        sira = ""
+        if barkodla:
+            kosul = (
+                f"({kosul} OR EXISTS (SELECT 1 FROM product_barcodes b "
+                "  WHERE b.product_id = p.id AND b.active = 1 "
+                "    AND b.barcode_norm LIKE ? ESCAPE '\\'))"
+            )
+            params.append(f"%{kacis(kod)}%")
+            sira = (
+                "CASE WHEN EXISTS (SELECT 1 FROM product_barcodes b "
+                "  WHERE b.product_id = p.id AND b.active = 1 "
+                "    AND b.barcode_norm LIKE ? ESCAPE '\\') THEN 0 ELSE 1 END, "
+            )
+        sql = (
+            "SELECT p.id, p.name, p.sale_price, p.current_stock, br.name AS marka "
+            "  FROM products p LEFT JOIN brands br ON br.id = p.brand_id "
+            " WHERE p.is_active = 1 AND p.sale_price IS NOT NULL AND " + kosul +
+            f" ORDER BY {sira}"
+            "  CASE WHEN p.name_norm LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END, p.name_norm "
+            " LIMIT ?"
+        )
+        if barkodla:
+            params.append(f"{kacis(kod)}%")
+        params.append(f"{kacis(kelimeler[0])}%")
+        params.append(max(1, min(100, limit)))
+        return self.db.query(sql, params)
+
     def incomplete(self, limit: int = 200) -> list[sqlite3.Row]:
         """"Eksik Ürün Bilgileri" — ilk kurulumdan sonra tamamlanacaklar.
 

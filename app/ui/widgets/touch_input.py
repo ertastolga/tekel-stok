@@ -59,6 +59,7 @@ class TouchKey(QPushButton):
     def __init__(self, text: str, parent: QWidget | None = None, width: int | None = None):
         super().__init__(text, parent)
         self.setObjectName("touchKey")
+        self.setProperty("dokunma", "evet")
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setAutoDefault(False)
         self.setDefault(False)

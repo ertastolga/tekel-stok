@@ -94,6 +94,10 @@ class SettingsService:
         """Hızlı Satış menüde / Ana Ekran'da / F1 ile erişilebilir mi?"""
         return self.get_bool("show_quick_sale", True)
 
+    def ekran_klavyesi(self) -> bool:
+        """Kasa arama alanlarında ekran klavyesi mi, fiziksel klavye mi?"""
+        return self.get_bool("ekran_klavyesi", True)
+
     def nav_collapsed_groups(self) -> set[str]:
         """Kapalı menü grupları. Ayarlanmamışsa kipe göre varsayılan."""
         deger = self.get("nav_collapsed_groups", "VARSAYILAN")

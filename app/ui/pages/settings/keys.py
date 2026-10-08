@@ -30,6 +30,8 @@ AYAR_BOLUMU: dict[str, str] = {
     "customer_display_hold_ms": "kasa",
     # V1.1'de kullanıcıya açıktı; kaldırılmadı (Kasa > Gelişmiş).
     "smart_grouping_enabled": "kasa",
+    # Görünüm
+    "ekran_klavyesi": "gorunum",
     # Ses
     "sound_enabled": "ses",
     # Barkod Okuyucu

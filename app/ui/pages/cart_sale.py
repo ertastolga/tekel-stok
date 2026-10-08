@@ -66,7 +66,7 @@ from app.ui.widgets.common import (
     make_label,
 )
 from app.ui.widgets.kasa import KasaToolbar, SonucSeridi
-from app.ui.widgets.kasa_overlays import BekleyenlerPanel
+from app.ui.widgets.kasa_overlays import BekleyenlerPanel, KatmanSahibi, UrunAraPanel
 
 log = logging.getLogger(__name__)
 
@@ -100,6 +100,7 @@ SERIT_ORNEKLERI = (
 
 #: Katman durumları. Okutmayı KABUL ETMEYEN katmanlar burada listelenir.
 KATMAN_BEKLEYENLER = "BEKLEYENLER"
+KATMAN_ARA = "ARA"
 OKUTMA_KAPALI_KATMANLAR = {KATMAN_BEKLEYENLER, "PARA_USTU"}
 
 #: Ayar okunamazsa kullanılan ekran bekletme süresi.
@@ -107,7 +108,7 @@ OKUTMA_KAPALI_KATMANLAR = {KATMAN_BEKLEYENLER, "PARA_USTU"}
 FALLBACK_DISPLAY_HOLD_MS = 4000
 
 
-class CartSalePage(Page):
+class CartSalePage(KatmanSahibi, Page):
     nav_title = "🛒  Sepetli Satış"
     nav_key = "sepetli_satis"
     nav_group = "kasa"
@@ -124,10 +125,9 @@ class CartSalePage(Page):
         self._checkout_busy = False
         self._display_hold = False
         #: Katman durum makinesi (plan §5.2): aynı anda en fazla bir katman.
-        self._overlay_state: str | None = None
-        self._overlay = None
-        self._overlay_token = None
+        self._katman_baslat()
         self._parked_panel: BekleyenlerPanel | None = None
+        self._search_panel: UrunAraPanel | None = None
 
         govde = QWidget()
         duzen = QVBoxLayout(govde)
@@ -174,6 +174,9 @@ class CartSalePage(Page):
         self.barcode.setPlaceholderText("BARKOD BEKLENİYOR — ürünü okutun")
         self.barcode.submitted.connect(self._add_by_code)
         self.toolbar.add_field(self.barcode)
+        self.search_button = self.toolbar.add_tool(
+            "🔍 Ürün Ara", self.open_search, "Barkodu okunmayan ürünü ada göre bul (Ctrl+F)"
+        )
         self.park_button = self.toolbar.add_tool(
             "Beklet", self.park_current, "Sepeti beklet, yeni müşteriye başla"
         )
@@ -661,38 +664,6 @@ class CartSalePage(Page):
         return self.guard_require(ProtectedAction.GECMIS_SATIS_GERI_AL)
 
     # ===================== Katmanlar =====================================
-    @property
-    def overlay_state(self) -> str | None:
-        return self._overlay_state
-
-    def _open_overlay(self, state: str, overlay, block_scans: bool) -> None:
-        self.close_overlay()
-        self._overlay_state = state
-        self._overlay = overlay
-        if block_scans:
-            self._overlay_token = self.main_window.router.suspend(
-                f"kasa katmanı: {state}", overlay.notify_blocked
-            )
-        self._set_controls_enabled(False)
-        overlay.cover(self)
-
-    def close_overlay(self) -> bool:
-        """Açık katmanı "vazgeç" anlamıyla kapatır; açık katman yoksa ``False``."""
-        if self._overlay is None:
-            return False
-        katman = self._overlay
-        try:
-            katman.hide()
-        finally:
-            if self._overlay_token is not None:
-                self.main_window.router.resume(self._overlay_token)
-                self._overlay_token = None
-            self._overlay = None
-            self._overlay_state = None
-            self._set_controls_enabled(True)
-            self.barcode.setFocus()
-        return True
-
     def _set_controls_enabled(self, enabled: bool) -> None:
         """Katman açıkken sepet, araç çubuğu ve ödeme denetimleri kapalıdır."""
         for dugme in self.toolbar.tools:
@@ -708,8 +679,51 @@ class CartSalePage(Page):
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
-        if self._overlay is not None:
-            self._overlay.setGeometry(self.rect())
+        self._katman_boyutla()
+
+    # ===================== Ürün Ara (F2) =================================
+    def focus_search(self) -> None:
+        """Ctrl+F ve "Ürün Ara" düğmesi."""
+        self.open_search()
+
+    def open_search(self) -> None:
+        if self._checkout_busy:
+            return
+        panel = self._search_panel_for_mode()
+        panel.reset()
+        self._open_overlay(KATMAN_ARA, panel, block_scans=False)
+        self._search_feedback("idle")
+
+    def _search_panel_for_mode(self) -> UrunAraPanel:
+        dokunmatik = self.services.settings.ekran_klavyesi()
+        if self._search_panel is None or self._search_panel.touch_keyboard != dokunmatik:
+            if self._search_panel is not None:
+                self._search_panel.deleteLater()
+            self._search_panel = UrunAraPanel(
+                self.services.products, touch_keyboard=dokunmatik,
+                scanner=getattr(self.main_window, "scanner", None), parent=self,
+            )
+            self._search_panel.hide()
+            self._search_panel.close_requested.connect(self.close_overlay)
+            self._search_panel.product_chosen.connect(self._on_search_chosen)
+        return self._search_panel
+
+    def _on_search_chosen(self, product_id: int) -> None:
+        """Sonuca dokunmak 1 adet ekler; panel açık kalır."""
+        self._add_product(product_id, 1, None, 1)
+
+    def _search_feedback(self, kind: str) -> None:
+        if self._overlay_state != KATMAN_ARA:
+            return
+        if kind == "idle":
+            metin = ""
+        else:
+            metin = self.banner.headline.text()
+            if self.banner.detail.text():
+                metin += f"  ·  {self.banner.detail.text()}"
+        sepet = (f"Sepet: {self.cart.item_count} ürün · {format_tl(self.cart.total)}"
+                 if not self.cart.is_empty else "Sepet boş")
+        self._overlay.show_feedback(kind, f"{metin}    —    {sepet}" if metin else sepet)
 
     # ===================== Bekleyen sepetler (F1) ========================
     def _refresh_parked_count(self) -> None:
@@ -963,3 +977,5 @@ class CartSalePage(Page):
         """Başarı dışı her gösterim eski onay kartını ANINDA düşürür."""
         if kind != "success":
             self._show_banner()
+        # Ürün Ara açıksa sonuç, panelin kendi satırında da görünür.
+        self._search_feedback(kind)

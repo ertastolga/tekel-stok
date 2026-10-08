@@ -62,7 +62,8 @@ def test_her_ayarin_denetimi_kendi_bolumunde(ayarlar):
 
 def test_bolumler_sirali_ve_dokunma_boyutunda(ayarlar):
     sira = [k for k, _ in BOLUMLER if k in ayarlar.bolumler]
-    assert sira == ["kasa", "ses", "barkod", "isletme", "stok", "yedekleme", "guvenlik"]
+    assert sira == ["kasa", "gorunum", "ses", "barkod", "isletme", "stok", "yedekleme",
+                    "guvenlik"]
     for kimlik, dugme in ayarlar.section_buttons.items():
         assert dugme.minimumHeight() >= metrics.TOUCH_TARGET_MIN
         dugme.click()

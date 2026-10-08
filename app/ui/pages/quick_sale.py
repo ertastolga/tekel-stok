@@ -36,6 +36,7 @@ from app.ui.dialogs.unknown_barcode import UnknownBarcodeDialog
 from app.ui.pages.base import Page
 from app.ui.widgets.barcode_input import BarcodeInput, FocusKeeper
 from app.ui.widgets.kasa import KasaToolbar, SonucSeridi
+from app.ui.widgets.kasa_overlays import KatmanSahibi, UrunAraPanel
 from app.ui.widgets.common import (
     Card,
     ResultBanner,
@@ -63,7 +64,7 @@ SERIT_ORNEKLERI = (
 )
 
 
-class QuickSalePage(Page):
+class QuickSalePage(KatmanSahibi, Page):
     nav_title = "⚡  Hızlı Satış"
     nav_key = "hizli_satis"
     kasa_sayfasi = True
@@ -72,6 +73,8 @@ class QuickSalePage(Page):
 
     def __init__(self, services, main_window) -> None:
         super().__init__(services, main_window)
+        self._katman_baslat()
+        self._search_panel: UrunAraPanel | None = None
 
         # Kasa sayfasında sayfa başlığı YOKTUR: tek satır araç çubuğu (§5.2).
         govde = QWidget()
@@ -87,6 +90,9 @@ class QuickSalePage(Page):
         self.barcode.setPlaceholderText("BARKOD BEKLENİYOR — ürünü okutun, hemen satılır")
         self.barcode.submitted.connect(self._on_manual_entry)
         self.toolbar.add_field(self.barcode)
+        self.search_button = self.toolbar.add_tool(
+            "🔍 Ürün Ara", self.open_search, "Barkodu okunmayan ürünü ada göre bul (Ctrl+F)"
+        )
         self.mode_button = self.toolbar.add_tool(
             "🛒  Sepetli Satış", lambda: self.main_window.go_to("sepetli_satis")
         )
@@ -163,7 +169,43 @@ class QuickSalePage(Page):
         self.refresh()
 
     def on_deactivated(self) -> None:
+        self.close_overlay()
         self.focus_keeper.stop()
+
+    # ===================== Ürün Ara (F2) =================================
+    def focus_search(self) -> None:
+        self.open_search()
+
+    def open_search(self) -> None:
+        dokunmatik = self.services.settings.ekran_klavyesi()
+        if self._search_panel is None or self._search_panel.touch_keyboard != dokunmatik:
+            if self._search_panel is not None:
+                self._search_panel.deleteLater()
+            self._search_panel = UrunAraPanel(
+                self.services.products, touch_keyboard=dokunmatik,
+                scanner=getattr(self.main_window, "scanner", None), parent=self,
+            )
+            self._search_panel.hide()
+            self._search_panel.close_requested.connect(self.close_overlay)
+            # Hızlı Satış'ta sonuca dokunmak = o ürünü hemen satmak.
+            self._search_panel.product_chosen.connect(
+                lambda pid: self._commit(pid, 1, None, 1)
+            )
+        self._search_panel.reset()
+        self._open_overlay("ARA", self._search_panel, block_scans=False)
+
+    def _set_controls_enabled(self, enabled: bool) -> None:
+        for dugme in self.toolbar.tools:
+            dugme.setEnabled(enabled)
+        self.undo_button.setEnabled(enabled)
+
+    def _search_feedback(self, kind: str, metin: str) -> None:
+        if self._overlay_state == "ARA":
+            self._overlay.show_feedback(kind, metin)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._katman_boyutla()
 
     def refresh(self) -> None:
         try:
@@ -299,6 +341,10 @@ class QuickSalePage(Page):
                 + (f" · {satir.quantity} adet" if satir.quantity > 1 else ""),
             )
         self.result_stack.setCurrentWidget(self.flash)
+        self._search_feedback(
+            "warning" if uyar else "success",
+            f"✓ SATILDI: {satir.product_name}  ·  {format_tl(sonuc.total_amount)}",
+        )
         self.refresh()
         self.main_window.refresh_today()
 
@@ -361,6 +407,11 @@ class QuickSalePage(Page):
         """Başarı dışı her gösterim eski onay kartını ANINDA düşürür."""
         if kind != "success":
             self._show_banner()
+        if kind in ("error", "warning"):
+            metin = self.banner.headline.text()
+            if self.banner.detail.text():
+                metin += f"  ·  {self.banner.detail.text()}"
+            self._search_feedback(kind, metin)
 
     def _fail(self, message: str, detail: str = "") -> None:
         sound.error()

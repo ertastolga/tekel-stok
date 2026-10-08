@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 from app.core.money import format_tl
 from app.ui import metrics, sound, theme
 from app.ui.widgets.common import EmptyState, make_label
+from app.ui.widgets.touch_input import ScanSafeLineEdit, TouchDisplay, TouchKeyboard
 
 #: Engellenen okutma bildiriminin katmanda kalma süresi.
 ENGEL_BILDIRIMI_MS = 2500
@@ -36,6 +37,7 @@ ENGEL_BILDIRIMI_MS = 2500
 def _dokunma_dugmesi(metin: str, ad: str = "kasaTool") -> QPushButton:
     dugme = QPushButton(metin)
     dugme.setObjectName(ad)
+    dugme.setProperty("dokunma", "evet")
     dugme.setMinimumHeight(metrics.TOUCH_TARGET_MIN)
     dugme.setFocusPolicy(Qt.FocusPolicy.NoFocus)
     return dugme
@@ -55,10 +57,11 @@ class KasaOverlay(QFrame):
             "border-radius: 10px; }"
         )
         dis = QVBoxLayout(self)
-        dis.setContentsMargins(metrics.PAGE_MARGIN_H, 12, metrics.PAGE_MARGIN_H, 12)
-        dis.setSpacing(10)
+        dis.setContentsMargins(metrics.PAGE_MARGIN_H, 8, metrics.PAGE_MARGIN_H, 8)
+        dis.setSpacing(8)
 
         ust = QHBoxLayout()
+        self.header_layout = ust
         self.title_label = make_label(title, "sectionTitle")
         ust.addWidget(self.title_label)
         ust.addStretch(1)
@@ -236,3 +239,169 @@ class BekleyenlerPanel(KasaOverlay):
             hedef = self._takas_id
             self.cancel_swap()
             self.swap_confirmed.emit(hedef)
+
+
+class UrunAraPanel(KasaOverlay):
+    """F2 — Ürün Ara: barkodu okunamayan ürünü ada / markaya / barkoda göre bul.
+
+    Bir sonuca dokunmak 1 adet ekler; panel açık kalır (birden çok ürün).
+    Panel açıkken okutma ÇALIŞIR: okutulan ürün sepete eklenir ve sonucu
+    panelin kendi geri bildirim satırında görünür. Klavyesiz kasada ekran
+    klavyesi, klavyeli bilgisayarda okutmaya dayanıklı bir yazı alanı kullanılır.
+    """
+
+    product_chosen = Signal(int)
+
+    #: En çok gösterilen sonuç (kasa ekranı sade kalsın).
+    SONUC_SINIRI = 30
+
+    def __init__(self, products, touch_keyboard: bool = True, scanner=None,
+                 parent: QWidget | None = None) -> None:
+        super().__init__("Ürün Ara", parent)
+        self.products = products
+        self.touch_keyboard = touch_keyboard
+        self.result_buttons: list[QPushButton] = []
+        self.title_label.setVisible(False)
+
+        if touch_keyboard:
+            self.display = TouchDisplay("Ürün adı, marka ya da barkod", max_length=60)
+            self.display.changed.connect(lambda _m: self._zamanla())
+            self.query_widget = self.display
+        else:
+            self.edit = ScanSafeLineEdit(scanner=scanner)
+            self.edit.setPlaceholderText("Ürün adı, marka ya da barkod")
+            self.edit.setMinimumHeight(metrics.TOUCH_TARGET_MIN)
+            self.edit.textChanged.connect(lambda _m: self._zamanla())
+            self.query_widget = self.edit
+        self.header_layout.insertWidget(0, self.query_widget, 1)
+
+        self.feedback_label = make_label("", wrap=False)
+        self.feedback_label.setMinimumHeight(22)
+        self.body.addWidget(self.feedback_label)
+
+        kaydirma = QScrollArea()
+        kaydirma.setWidgetResizable(True)
+        kaydirma.setMinimumHeight(2 * metrics.TOUCH_TARGET_MIN + 8)
+        icerik = QWidget()
+        self.results_layout = QVBoxLayout(icerik)
+        self.results_layout.setContentsMargins(0, 0, 0, 0)
+        self.results_layout.setSpacing(6)
+        self.empty = make_label("Aramak için yazmaya başlayın.", "cardHint")
+        self.results_layout.addWidget(self.empty)
+        self.results_layout.addStretch(1)
+        kaydirma.setWidget(icerik)
+        self.body.addWidget(kaydirma, 1)
+
+        if touch_keyboard:
+            self.keyboard = TouchKeyboard()
+            self.keyboard.bind(self.display)
+            self.body.addWidget(self.keyboard)
+
+        self._zamanlayici = QTimer(self)
+        self._zamanlayici.setSingleShot(True)
+        self._zamanlayici.setInterval(150)
+        self._zamanlayici.timeout.connect(self.search_now)
+
+    def query(self) -> str:
+        return self.display.value() if self.touch_keyboard else self.edit.text()
+
+    def set_query(self, metin: str) -> None:
+        if self.touch_keyboard:
+            self.display.set_value(metin)
+        else:
+            self.edit.setText(metin)
+
+    def _zamanla(self) -> None:
+        self._zamanlayici.start()
+
+    def search_now(self) -> None:
+        self._zamanlayici.stop()
+        metin = self.query()
+        sonuclar = self.products.search_for_sale(metin, limit=self.SONUC_SINIRI)
+        for dugme in self.result_buttons:
+            self.results_layout.removeWidget(dugme)
+            dugme.deleteLater()
+        self.result_buttons = []
+        for sira, satir in enumerate(sonuclar):
+            ad = satir["name"] + (f"  ·  {satir['marka']}" if satir["marka"] else "")
+            dugme = QPushButton(f"{ad}    {format_tl(satir['sale_price'])}")
+            dugme.setObjectName("searchResult")
+            dugme.setProperty("dokunma", "evet")
+            dugme.setMinimumHeight(metrics.TOUCH_TARGET_MIN)
+            dugme.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            dugme.setProperty("product_id", int(satir["id"]))
+            dugme.clicked.connect(
+                lambda _=False, pid=int(satir["id"]): self.product_chosen.emit(pid)
+            )
+            self.results_layout.insertWidget(sira, dugme)
+            self.result_buttons.append(dugme)
+        bos = not sonuclar
+        self.empty.setVisible(bos)
+        self.empty.setText(
+            "Aramak için yazmaya başlayın." if not metin.strip()
+            else "Bu aramayla satılabilir ürün bulunamadı."
+        )
+
+    def show_feedback(self, kind: str, text: str) -> None:
+        """Sepetin / satışın son sonucu (okutma ya da dokunuş) panelin içinde."""
+        renk = {
+            "success": theme.PRIMARY_DARK, "error": theme.DANGER,
+            "warning": theme.WARNING,
+        }.get(kind, theme.TEXT_MUTED)
+        self.feedback_label.setStyleSheet(f"color: {renk}; font-weight: 600;")
+        self.feedback_label.setText(text)
+
+    def reset(self) -> None:
+        self.set_query("")
+        self.feedback_label.setText("")
+        self.search_now()
+
+
+class KatmanSahibi:
+    """Kasa sayfasının katman durum makinesi (aynı anda en çok bir katman).
+
+    Sayfa ``_katman_baslat()`` çağırır ve ``_set_controls_enabled(bool)`` ile
+    ``barcode`` sağlar. Okutmayı engelleyen katman bir askı JETONU tutar ve
+    jeton katman kapanırken ``finally`` içinde bırakılır.
+    """
+
+    def _katman_baslat(self) -> None:
+        self._overlay_state: str | None = None
+        self._overlay = None
+        self._overlay_token = None
+
+    @property
+    def overlay_state(self) -> str | None:
+        return self._overlay_state
+
+    def _open_overlay(self, state: str, overlay, block_scans: bool) -> None:
+        self.close_overlay()
+        self._overlay_state = state
+        self._overlay = overlay
+        if block_scans:
+            self._overlay_token = self.main_window.router.suspend(
+                f"kasa katmanı: {state}", overlay.notify_blocked
+            )
+        self._set_controls_enabled(False)
+        overlay.cover(self)
+
+    def close_overlay(self) -> bool:
+        """Açık katmanı "vazgeç" anlamıyla kapatır; açık katman yoksa ``False``."""
+        if self._overlay is None:
+            return False
+        katman = self._overlay
+        try:
+            katman.hide()
+        finally:
+            if self._overlay_token is not None:
+                self.main_window.router.resume(self._overlay_token)
+                self._overlay_token = None
+            self._overlay = None
+            self._overlay_state = None
+            self._set_controls_enabled(True)
+            self.barcode.setFocus()
+        return True
+
+    def _katman_boyutla(self) -> None:
+        if self._overlay is not None:
+            self._overlay.setGeometry(self.rect())
