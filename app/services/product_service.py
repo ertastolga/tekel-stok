@@ -24,6 +24,11 @@ from app.core.tr import normalize_name, search_matches
 
 log = logging.getLogger(__name__)
 
+#: "Alış fiyatı biliniyor" koşulu (plan §5.8 ``known_cost``): gerçek bir
+#: alıştan damgalanmış, sıfırdan büyük ``last_purchase_cost``. Tahmini ve
+#: bedelsiz girişler bu sütunu DAMGALAMAZ (M6a); 0 / NULL = bilinmiyor.
+BILINEN_MALIYET_VAR = "p.last_purchase_cost > 0"
+
 #: ``update`` ile değiştirilebilen sütunlar (beyaz liste). Fiyat
 #: ``set_price``, stok defterden, durum ``set_active`` ile değişir.
 _DUZENLENEBILIR = frozenset({
@@ -102,6 +107,8 @@ class ProductService:
         limit: int = 200,
         offset: int = 0,
         only_inactive: bool = False,
+        no_price: bool = False,
+        no_known_cost: bool = False,
     ) -> list[sqlite3.Row]:
         """Filtreli ürün araması — DAİMA sayfalı.
 
@@ -130,6 +137,10 @@ class ProductService:
         if stock_state is not None:
             where.append("p.stock_state = ?")
             params.append(int(stock_state))
+        if no_price:
+            where.append("p.sale_price IS NULL")
+        if no_known_cost:
+            where.append(f"NOT IFNULL({BILINEN_MALIYET_VAR}, 0)")
         if location_id is not None:
             where.append(
                 "EXISTS (SELECT 1 FROM product_locations pl WHERE pl.product_id = p.id "
@@ -543,6 +554,13 @@ class ProductService:
                 "category", category_id, details={"urunler": kimlikler}, conn=conn,
             )
             return sayi
+
+    def known_cost(self, product_id: int) -> int | None:
+        """Bilinen gerçek alış fiyatı (kuruş) ya da ``None`` (plan §5.8)."""
+        return self.db.scalar(
+            f"SELECT CASE WHEN {BILINEN_MALIYET_VAR} THEN p.last_purchase_cost END "
+            f"  FROM products p WHERE p.id = ?", (product_id,),
+        )
 
     def first_barcodes(self, product_ids: list[int]) -> dict[int, str]:
         """Liste ekranı için her ürünün ilk etkin barkodu (TEK sorgu)."""

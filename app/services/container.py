@@ -21,6 +21,7 @@ from app.services.catalog_service import CatalogService
 from app.services.category_service import CategoryService
 from app.services.count_service import CountService
 from app.services.inventory_service import InventoryService
+from app.services.pricing_service import PricingService
 from app.services.product_service import ProductService
 from app.services.purchase_service import PurchaseService
 from app.services.sale_service import SaleService
@@ -51,6 +52,7 @@ class Services:
     payments: PaymentService
     display: CustomerDisplayService
     security: SecurityService
+    pricing: PricingService
 
     def close(self) -> None:
         self.display.close()
@@ -76,6 +78,7 @@ def build_services(db: Database) -> Services:
     analytics = AnalyticsService(db, settings, inventory, products)
     grouping = SessionGroupingService(db, settings, audit)
     security = SecurityService(db, settings, audit)
+    pricing = PricingService(db, products, categories, audit)
     # Odeme ve musteri ekrani: veritabani bilmeyen, degistirilebilir adaptorler.
     payments = PaymentService()
     display = CustomerDisplayService()
@@ -99,6 +102,7 @@ def build_services(db: Database) -> Services:
         payments=payments,
         display=display,
         security=security,
+        pricing=pricing,
     )
 
 

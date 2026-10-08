@@ -49,6 +49,7 @@ AYAR_BOLUMU: dict[str, str] = {
     "default_critical_stock": "stok",
     "slow_moving_days": "stok",
     "large_count_diff_threshold": "stok",
+    "price_rounding": "stok",
     # Yedekleme
     "auto_backup_interval_minutes": "yedekleme",
     "auto_backup_retention": "yedekleme",

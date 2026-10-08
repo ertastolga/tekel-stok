@@ -104,6 +104,13 @@ class SettingsService:
         """Hızlı Satış menüde / Ana Ekran'da / F1 ile erişilebilir mi?"""
         return self.get_bool("show_quick_sale", True)
 
+    def price_rounding(self) -> int:
+        """Toplu fiyat yuvarlama adımı (kuruş); bilinmeyen değer → 1 TL."""
+        from app.core.pricing_math import VARSAYILAN_ADIM, YUVARLAMA_ADIMLARI
+
+        adim = self.get_int("price_rounding", VARSAYILAN_ADIM)
+        return adim if adim in YUVARLAMA_ADIMLARI else VARSAYILAN_ADIM
+
     def cash_change_calculator(self) -> bool:
         """NAKİT'e dokununca Para Üstü paneli açılsın mı (varsayılan: hayır)?"""
         return self.get_bool("cash_change_calculator", False)

@@ -819,6 +819,27 @@ class Database:
                 "      OR SUM(na) <> 0 OR SUM(ka) <> 0)",
                 "I34: {n} günlük satış özeti satışlarla uyuşmuyor.",
             )
+            # Satış fiyatını yalnızca fiyat geçmişine yazan yollar değiştirir:
+            # geçmişi olan her ürünün SON geçmiş satırı bugünkü fiyatıdır. Toplu
+            # fiyat geri alması bu varsayıma dayanır.
+            check(
+                "SELECT COUNT(*) FROM products p JOIN ("
+                "  SELECT product_id, MAX(id) AS son FROM price_history "
+                "   GROUP BY product_id) s ON s.product_id = p.id "
+                "  JOIN price_history h ON h.id = s.son "
+                " WHERE h.new_price IS NOT p.sale_price",
+                "I35: {n} ürünün fiyatı son fiyat geçmişi kaydıyla uyuşmuyor.",
+            )
+            if self.scalar(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name = 'price_change_batches'",
+                default=0,
+            ):
+                check(
+                    "SELECT COUNT(*) FROM price_change_batches b "
+                    " WHERE b.product_count <> (SELECT COUNT(*) FROM price_history h "
+                    "                            WHERE h.batch_id = b.id)",
+                    "I36: {n} toplu fiyat grubunun ürün sayısı geçmişle uyuşmuyor.",
+                )
             check(
                 "SELECT COUNT(*) FROM stock_movements m JOIN "
                 "  (SELECT id, SUM(quantity_delta) OVER (PARTITION BY product_id "

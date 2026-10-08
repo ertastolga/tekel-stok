@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
 from app.core import schema as schema_mod
 from app.core.clock import shift_days
 from app.core.errors import DomainError
+from app.core.pricing_math import YUVARLAMA_ADIMLARI
 from app.core.tr import fmt_datetime
 from app.services.security_service import ProtectedAction
 from app.ui import metrics, sound, theme
@@ -486,6 +487,24 @@ class SettingsPage(Page):
             "ürünlerin sınırları ürün ekranından değiştirilir."
         ))
         duzen.addWidget(kutu)
+
+        fiyat = QGroupBox("Fiyat")
+        f = QVBoxLayout(fiyat)
+        self.rounding_combo = QComboBox()
+        for adim, etiket in YUVARLAMA_ADIMLARI.items():
+            self.rounding_combo.addItem(etiket, adim)
+        self.rounding_combo.currentIndexChanged.connect(
+            lambda _=0: self._kaydet("price_rounding", self.rounding_combo.currentData(),
+                                     uygula=False)
+        )
+        self._kayit("price_rounding", self.rounding_combo, lambda: self._combo_yukle(
+            self.rounding_combo, self.services.settings.price_rounding()))
+        f.addLayout(self._satir("Toplu fiyat değişikliğinde yuvarla", self.rounding_combo))
+        f.addWidget(self._hint(
+            "Artışlar yukarı, düşüşler aşağı yuvarlanır: %5 artış hiçbir ürünü "
+            "ucuzlatmaz. \"Fiyatı şu yap\" yazdığınız tutarı aynen kullanır."
+        ))
+        duzen.addWidget(fiyat)
         duzen.addStretch(1)
         return icerik
 

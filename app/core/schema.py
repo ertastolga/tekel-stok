@@ -18,7 +18,7 @@ import sqlite3
 from app.core.clock import BEGINNING_OF_TIME, DEFAULT_BUSINESS_DAY_START_HOUR
 from app.core.tr import normalize_name
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 # =========================================================================
@@ -669,6 +669,9 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "default_critical_stock": "2",
     "slow_moving_days": "45",
     "large_count_diff_threshold": "20",
+    # Toplu fiyat değişikliğinde yuvarlama adımı (kuruş): 1 | 50 | 100 | 500.
+    # Artışlar yukarı, düşüşler aşağı yuvarlanır (yön korunur).
+    "price_rounding": "100",
     # --- Yedekleme ---
     "auto_backup_interval_minutes": "120",
     "auto_backup_retention": "10",
@@ -779,10 +782,36 @@ _V3_REFERANS_MALIYET = [
     "ALTER TABLE products ADD COLUMN reference_cost_updated_at_utc INTEGER",
 ]
 
+#: v4 (V1.2 M5a) — Toplu fiyat değişikliği grupları. Fiyat geçmişi satırı
+#: hangi toplu işlemle yazıldığını taşır; bir grup YALNIZCA BİR KEZ geri
+#: alınabilir (benzersiz kısmi indeks). Mevcut geçmiş satırları: NULL (elle).
+_V4_FIYAT_GRUPLARI = [
+    """
+    CREATE TABLE IF NOT EXISTS price_change_batches (
+        id                INTEGER PRIMARY KEY,
+        created_at_utc    INTEGER NOT NULL,
+        kind              TEXT    NOT NULL
+                          CHECK (kind IN ('TOPLU','ICE_AKTARMA','GERI_ALMA','MAL_KABUL')),
+        description       TEXT,
+        product_count     INTEGER NOT NULL DEFAULT 0 CHECK (product_count >= 0),
+        reverses_batch_id INTEGER REFERENCES price_change_batches(id)
+    )
+    """,
+    "ALTER TABLE price_history ADD COLUMN batch_id INTEGER "
+    "REFERENCES price_change_batches(id)",
+    "CREATE INDEX IF NOT EXISTS ix_price_history_product "
+    "ON price_history(product_id, changed_at_utc, id)",
+    "CREATE INDEX IF NOT EXISTS ix_price_history_batch "
+    "ON price_history(batch_id) WHERE batch_id IS NOT NULL",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_price_batches_one_reversal "
+    "ON price_change_batches(reverses_batch_id) WHERE reverses_batch_id IS NOT NULL",
+]
+
 #: Her göç ya SQL metni ya da ``conn`` alan bir fonksiyondur. Göçler bir kez
 #: işlendikten sonra DEĞİŞTİRİLMEZ; yalnızca yeni sürüm eklenir.
 MIGRATIONS: list[tuple[int, list]] = [
     (1, [*_V1_TABLES, *_V1_INDEXES, _v1_seed]),
     (2, _V2_BEKLEYEN_SEPETLER),
     (3, _V3_REFERANS_MALIYET),
+    (4, _V4_FIYAT_GRUPLARI),
 ]

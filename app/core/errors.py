@@ -268,3 +268,18 @@ class YedekOkunamadi(DomainError):
         super().__init__(
             "Seçilen dosya geçerli bir yedek değil ya da bozulmuş.", detail
         )
+
+
+# --- Fiyat Yönetimi (V1.2 M5) ---------------------------------------------
+class TopluFiyatHatasi(DomainError):
+    """Toplu fiyat değişikliği / geri alma yapılamadı (kullanıcıya açıklanır)."""
+
+
+class FiyatlarDegisti(TopluFiyatHatasi):
+    """Önizlemeden SONRA bazı ürünlerin fiyatı değişti; hiçbir şey yazılmadı."""
+
+    def __init__(self, adet: int) -> None:
+        super().__init__(
+            f"Önizlemeden sonra {adet} ürünün fiyatı değişti. Hiçbir fiyat "
+            "değiştirilmedi; lütfen yeniden önizleyin."
+        )
