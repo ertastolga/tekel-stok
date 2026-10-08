@@ -64,6 +64,13 @@ class BarcodeInput(QLineEdit):
         if text.strip():
             self.submitted.emit(text)
 
+    def set_compact(self, compact: bool = True) -> None:
+        """Kasa araç çubuğu için alçak biçim (yerleşim bütçesi)."""
+        self.setProperty("kompakt", "evet" if compact else "hayir")
+        self.setMinimumHeight(0 if compact else metrics.BARCODE_INPUT_HEIGHT)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
     def set_mode(self, mode: str) -> None:
         """Ekrana göre odak rengi: satış yeşil, stok turuncu, sayım mor."""
         self.setProperty("mode", mode)

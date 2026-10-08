@@ -70,6 +70,10 @@ TOUCH_TARGET_MIN = 56
 CART_ROW_HEIGHT = 84
 #: NAKİT / KART düğmeleri: ekranın en büyük hedefleri.
 PAYMENT_BUTTON_HEIGHT = 88
+#: Kasa araç çubuğundaki kompakt barkod alanı (araç çubuğu ≤ 64 px):
+#: içerik + 4 px dolgu ×2 + 3 px odak kenarı ×2 ≤ 60 px.
+KASA_BARCODE_MIN_HEIGHT = 46
+FONT_KASA_BARCODE_PT = 15.0
 #: Sepet toplamı karşıdan okunabilmeli.
 FONT_TOTAL_PT = 30.0
 FONT_PAYMENT_PT = 17.0

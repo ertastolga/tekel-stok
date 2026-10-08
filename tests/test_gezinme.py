@@ -99,7 +99,7 @@ def test_hizli_satis_kapatilinca_her_yerden_kalkar(window, qapp, services):
     window.go_to("ana_ekran")
     assert not _gorunur(window, "hizli_satis")
     assert not window.pages["ana_ekran"].quick_card.isVisibleTo(window)
-    assert not window.pages["sepetli_satis"].mode_button.isVisibleTo(window.pages["sepetli_satis"])
+    assert not window.pages["sepetli_satis"].mode_button.isVisible(), "⋯ menüsünde yok"
 
     window.go_to("hizli_satis")                            # F1 de buraya gelir
     assert window._current_key == "ana_ekran"

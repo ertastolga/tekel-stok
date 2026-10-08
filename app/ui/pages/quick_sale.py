@@ -35,9 +35,9 @@ from app.ui.dialogs.common_dialogs import (
 from app.ui.dialogs.unknown_barcode import UnknownBarcodeDialog
 from app.ui.pages.base import Page
 from app.ui.widgets.barcode_input import BarcodeInput, FocusKeeper
+from app.ui.widgets.kasa import KasaToolbar, SonucSeridi
 from app.ui.widgets.common import (
     Card,
-    PageHeader,
     ResultBanner,
     SaleFlash,
     StatCard,
@@ -47,6 +47,20 @@ from app.ui.widgets.common import (
 )
 
 log = logging.getLogger(__name__)
+
+
+#: Kasa sayfası dikey kenar boşluğu ve aralık (bütçe §5.2).
+KASA_DIKEY_KENAR = 10
+KASA_ARALIK = 10
+
+#: Sonuç şeridindeki en uzun iletiler (şerit yüksekliği bunlarla ölçülür).
+SERIT_ORNEKLERI = (
+    ("flash", "✓ SATILDI", "Jack Daniel's Tennessee Whiskey 70 cl Şişe",
+     "12.345,50 TL · stok kontrolü gerekli", ""),
+    ("banner", "Bu ürünün satış fiyatı girilmemiş.",
+     "Jack Daniel's Tennessee Whiskey 70 cl Şişe — önce fiyatını yazın.", ""),
+    ("banner", "İşlem tamamlanamadı. Stok ve satış bilgileri değiştirilmedi.", "", ""),
+)
 
 
 class QuickSalePage(Page):
@@ -59,23 +73,31 @@ class QuickSalePage(Page):
     def __init__(self, services, main_window) -> None:
         super().__init__(services, main_window)
 
-        self.header = PageHeader("⚡ Hızlı Satış", "Barkodu okutun, ürün hemen satılır.")
-        self.mode_button = QPushButton("🛒  Sepetli Satışa Geç")
-        self.mode_button.clicked.connect(
-            lambda: self.main_window.go_to("sepetli_satis")
-        )
-        self.header.add_action(self.mode_button)
-        self.root.addWidget(self.header)
-
+        # Kasa sayfasında sayfa başlığı YOKTUR: tek satır araç çubuğu (§5.2).
         govde = QWidget()
-        duzen = QHBoxLayout(govde)
-        duzen.setContentsMargins(
-            metrics.PAGE_MARGIN_H, metrics.PAGE_MARGIN_V,
-            metrics.PAGE_MARGIN_H, metrics.PAGE_MARGIN_V,
+        dikey = QVBoxLayout(govde)
+        dikey.setContentsMargins(
+            metrics.PAGE_MARGIN_H, KASA_DIKEY_KENAR,
+            metrics.PAGE_MARGIN_H, KASA_DIKEY_KENAR,
         )
-        duzen.setSpacing(metrics.PAGE_SPACING)
-        duzen.addWidget(self._build_left(), 3)
-        duzen.addWidget(self._build_right(), 2)
+        dikey.setSpacing(KASA_ARALIK)
+
+        self.toolbar = KasaToolbar()
+        self.barcode = BarcodeInput("sale")
+        self.barcode.setPlaceholderText("BARKOD BEKLENİYOR — ürünü okutun, hemen satılır")
+        self.barcode.submitted.connect(self._on_manual_entry)
+        self.toolbar.add_field(self.barcode)
+        self.mode_button = self.toolbar.add_tool(
+            "🛒  Sepetli Satış", lambda: self.main_window.go_to("sepetli_satis")
+        )
+        self.toolbar.finish(with_menu=False)
+        dikey.addWidget(self.toolbar)
+
+        yatay = QHBoxLayout()
+        yatay.setSpacing(metrics.PAGE_SPACING)
+        yatay.addWidget(self._build_left(), 3)
+        yatay.addWidget(self._build_right(), 2)
+        dikey.addLayout(yatay, 1)
         self.root.addWidget(govde, 1)
 
         self.focus_keeper = FocusKeeper(self.barcode)
@@ -87,20 +109,11 @@ class QuickSalePage(Page):
         duzen.setContentsMargins(0, 0, 0, 0)
         duzen.setSpacing(metrics.PAGE_SPACING)
 
-        kart = Card()
-        kart.body.addWidget(make_label("BARKOD BEKLENİYOR", "cardTitle"))
-        self.barcode = BarcodeInput("sale")
-        self.barcode.submitted.connect(self._on_manual_entry)
-        kart.body.addWidget(self.barcode)
-        duzen.addWidget(kart)
-
         # Sonuç yüzeyi: şerit ve onay kartı TEK bir yığında durur, böylece
         # yüzey değişimi sayfayı yeniden akıtmaz ve düzen zıplamaz.
-        self.result_stack = QStackedWidget()
         self.banner = ResultBanner()
         self.flash = SaleFlash()
-        self.result_stack.addWidget(self.banner)
-        self.result_stack.addWidget(self.flash)
+        self.result_stack = SonucSeridi(self.banner, self.flash, SERIT_ORNEKLERI)
         self.flash.expired.connect(self._show_banner)
         self.banner.shown.connect(self._on_banner_shown)
         duzen.addWidget(self.result_stack)

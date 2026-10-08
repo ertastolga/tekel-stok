@@ -157,9 +157,13 @@ class SaleFlash(QFrame):
         self.title = make_label("", "flashLine")
         self.name = make_label("", "flashName", wrap=True)
         self.line = make_label("", "flashLine")
+        #: İsteğe bağlı ek satır (ör. "Para üstü: 50 TL"); boşsa yer kaplamaz.
+        self.extra = make_label("", "flashLine")
+        self.extra.setVisible(False)
         duzen.addWidget(self.title)
         duzen.addWidget(self.name)
         duzen.addWidget(self.line)
+        duzen.addWidget(self.extra)
 
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
@@ -173,6 +177,7 @@ class SaleFlash(QFrame):
         border: str | None = None,
         background: str | None = None,
         duration_ms: int | None = None,
+        extra: str = "",
     ) -> None:
         # Varsayılanlar ÇAĞRI ANINDA okunur: açılışta seçilen tema/ölçü geçerli olsun.
         border = border or theme.PRIMARY
@@ -182,11 +187,16 @@ class SaleFlash(QFrame):
             f"#saleFlash {{ border: 2px solid {border}; background: {background}; }}"
             f"#flashName {{ color: {border}; }}"
         )
+        self.set_texts(title, name, line, extra)
+        self._timer.start(duration_ms)
+
+    def set_texts(self, title: str, name: str, line: str = "", extra: str = "") -> None:
         self.title.setText(title)
         self.name.setText(name)
         self.line.setText(line)
         self.line.setVisible(bool(line))
-        self._timer.start(duration_ms)
+        self.extra.setText(extra)
+        self.extra.setVisible(bool(extra))
 
     def _finish(self) -> None:
         self.expired.emit()

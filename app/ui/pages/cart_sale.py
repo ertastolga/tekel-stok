@@ -56,11 +56,11 @@ from app.ui.widgets.cart_row import CartLineRow
 from app.ui.widgets.common import (
     Card,
     EmptyState,
-    PageHeader,
     ResultBanner,
     SaleFlash,
     make_label,
 )
+from app.ui.widgets.kasa import KasaToolbar, SonucSeridi
 
 log = logging.getLogger(__name__)
 
@@ -71,6 +71,26 @@ HIGHLIGHT_MS = 900
 #: yavaşlatmayacak kadar uzun, elektrik kesintisinde en fazla bu kadarlık
 #: değişikliği kaybettirecek kadar kısa.
 AUTOSAVE_MS = 750
+
+#: Kasa sayfasının dikey kenar boşluğu ve öğeler arası boşluk (bütçe §5.2).
+KASA_DIKEY_KENAR = 10
+KASA_ARALIK = 10
+
+#: Sonuç şeridinde gösterilebilecek EN UZUN iletiler; şerit yüksekliği bunlarla
+#: ölçülür. Yeni bir uzun ileti eklenirse buraya da eklenir (test denetler).
+SERIT_ORNEKLERI = (
+    ("flash", "✓ SATIŞ TAMAMLANDI", "12.345,50 TL",
+     "128 ürün · NAKİT · stok kontrolü gerekli", "Para üstü: 7.654,50 TL"),
+    ("banner", "Sepet dolu olduğu için geri alma kapalı.",
+     "Bu eylem ÖNCEKİ satışı iptal eder. Önce bu sepeti tamamlayın ya da "
+     "boşaltın; dilediğiniz satışı Geçmiş ekranından da geri alabilirsiniz.", ""),
+    ("banner", "Ödeme alınmadı: sepette değişen ürün var.",
+     "İşaretli satırlar için \"Güncel fiyatları uygula\"ya dokunun ya da ürünü "
+     "sepetten çıkarın.", ""),
+    ("banner", "Satış kaydedilemedi.",
+     "Ödeme alındıysa lütfen kontrol edin. Satış KAYDEDİLMEDİ; sepet olduğu gibi "
+     "duruyor.", ""),
+)
 
 #: Ayar okunamazsa kullanılan ekran bekletme süresi.
 #: ``schema.DEFAULT_SETTINGS["customer_display_hold_ms"]`` ile aynı değer.
@@ -94,35 +114,16 @@ class CartSalePage(Page):
         self._checkout_busy = False
         self._display_hold = False
 
-        self.header = PageHeader("🛒 Sepetli Satış", "Barkodu okutun.")
-        self.undo_button = QPushButton(
-            shortcuts.label_with_key("geri_al", "Son Satışı Geri Al")
-        )
-        self.undo_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.undo_button.clicked.connect(self.undo_last)
-        self.header.add_action(self.undo_button)
-
-        self.clear_button = QPushButton("Sepeti Boşalt")
-        self.clear_button.setObjectName("danger")
-        self.clear_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.clear_button.clicked.connect(self._clear_cart)
-        self.header.add_action(self.clear_button)
-
-        self.mode_button = QPushButton("⚡  Hızlı Satış")
-        self.mode_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.mode_button.clicked.connect(lambda: self.main_window.go_to("hizli_satis"))
-        self.header.add_action(self.mode_button)
-        self.root.addWidget(self.header)
-
         govde = QWidget()
         duzen = QVBoxLayout(govde)
+        # Kasa sayfasında sayfa başlığı YOKTUR (yerleşim bütçesi, plan §5.2).
         duzen.setContentsMargins(
-            metrics.PAGE_MARGIN_H, metrics.PAGE_MARGIN_V,
-            metrics.PAGE_MARGIN_H, metrics.PAGE_MARGIN_V,
+            metrics.PAGE_MARGIN_H, KASA_DIKEY_KENAR,
+            metrics.PAGE_MARGIN_H, KASA_DIKEY_KENAR,
         )
-        duzen.setSpacing(12)
+        duzen.setSpacing(KASA_ARALIK)
 
-        duzen.addWidget(self._build_scan_card())
+        duzen.addWidget(self._build_toolbar())
         duzen.addWidget(self._build_result_surface())
         duzen.addWidget(self._build_list(), 1)
         duzen.addWidget(self._build_payment_bar())
@@ -151,27 +152,31 @@ class CartSalePage(Page):
             log.exception("Kasa ayarları uygulanamadı")
 
     # ===================== Kurulum =======================================
-    def _build_scan_card(self) -> QWidget:
-        kart = Card()
-        kart.body.setContentsMargins(12, 8, 12, 8)
-        kart.body.setSpacing(4)
-        kart.body.addWidget(make_label("BARKOD BEKLENİYOR", "cardTitle"))
+    def _build_toolbar(self) -> QWidget:
+        """Tek satır: barkod alanı + dokunma düğmeleri + "⋯" menüsü."""
+        self.toolbar = KasaToolbar()
         self.barcode = BarcodeInput("sale")
+        self.barcode.setPlaceholderText("BARKOD BEKLENİYOR — ürünü okutun")
         self.barcode.submitted.connect(self._add_by_code)
-        kart.body.addWidget(self.barcode)
-        return kart
+        self.toolbar.add_field(self.barcode)
+        self.toolbar.finish()
+        # "⋯" menüsü: seyrek kullanılan eylemler. Öznitelik adları V1.1 ile
+        # aynıdır (``undo_button``, ``clear_button``, ``mode_button``).
+        self.undo_button = self.toolbar.add_menu_action(
+            shortcuts.label_with_key("geri_al", "Son Satışı Geri Al"), self.undo_last
+        )
+        self.clear_button = self.toolbar.add_menu_action("Sepeti Boşalt", self._clear_cart)
+        self.mode_button = self.toolbar.add_menu_action(
+            "⚡  Hızlı Satış", lambda: self.main_window.go_to("hizli_satis")
+        )
+        return self.toolbar
 
     def _build_result_surface(self) -> QWidget:
         # Kanıtlanmış desen (bkz. quick_sale.py): şerit ve onay kartı TEK bir
         # yığında durur, böylece yüzey değişimi düzeni zıplatmaz.
-        self.result_stack = QStackedWidget()
         self.banner = ResultBanner()
         self.flash = SaleFlash()
-        self.result_stack.addWidget(self.banner)
-        self.result_stack.addWidget(self.flash)
-        # Serit sabit ve SINIRLI yukseklikte kalir: ekranin asil alani sepet
-        # listesidir, geri bildirim onu bastirmamali.
-        self.result_stack.setFixedHeight(96)
+        self.result_stack = SonucSeridi(self.banner, self.flash, SERIT_ORNEKLERI)
         self.flash.expired.connect(self._show_banner)
         self.banner.shown.connect(self._on_banner_shown)
         return self.result_stack
@@ -179,8 +184,8 @@ class CartSalePage(Page):
     def _build_list(self) -> QWidget:
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
-        # Sepet listesi ekranin ASIL alanidir: kasiyer ne sattigini gormeli.
-        self.scroll.setMinimumHeight(metrics.CART_ROW_HEIGHT * 3)
+        # Sepet listesi ekranin ASIL alanidir: en az iki satır her zaman görünür.
+        self.scroll.setMinimumHeight(metrics.CART_ROW_HEIGHT * 2 + 8 + 4)
         self.scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
@@ -204,13 +209,20 @@ class CartSalePage(Page):
         return self.scroll
 
     def _build_payment_bar(self) -> QWidget:
+        """TEK satır: toplam + NAKİT + KART (düğmeler ≥ 88 px)."""
         kart = Card()
-        kart.body.setContentsMargins(14, 10, 14, 10)
-        kart.body.setSpacing(8)
+        kart.body.setContentsMargins(14, 8, 14, 8)
+        kart.body.setSpacing(0)
 
-        ust = QHBoxLayout()
-        ust.addWidget(make_label("TOPLAM", "cartGrandLabel"))
-        ust.addStretch(1)
+        satir = QHBoxLayout()
+        satir.setSpacing(12)
+        toplam = QVBoxLayout()
+        toplam.setSpacing(0)
+        self.total_caption = make_label("TOPLAM", "cartGrandLabel")
+        toplam.addWidget(self.total_caption)
+        self.total_label = make_label("0 TL", "cartGrandTotal")
+        toplam.addWidget(self.total_label)
+        satir.addLayout(toplam)
         # Yalnızca fiyatı değişen satır varken görünür: fiyat ASLA sessizce
         # düzeltilmez, kasiyer açıkça onaylar.
         self.apply_prices_button = QPushButton("Güncel fiyatları uygula")
@@ -219,13 +231,7 @@ class CartSalePage(Page):
         self.apply_prices_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.apply_prices_button.clicked.connect(self.apply_current_prices)
         self.apply_prices_button.setVisible(False)
-        ust.addWidget(self.apply_prices_button)
-        self.total_label = make_label("0 TL", "cartGrandTotal")
-        ust.addWidget(self.total_label)
-        kart.body.addLayout(ust)
-
-        dugmeler = QHBoxLayout()
-        dugmeler.setSpacing(12)
+        satir.addWidget(self.apply_prices_button)
 
         self.cash_button = QPushButton("NAKİT")
         self.cash_button.setObjectName("cashButton")
@@ -235,7 +241,7 @@ class CartSalePage(Page):
         self.cash_button.clicked.connect(
             lambda: self.complete(PaymentMethod.CASH)
         )
-        dugmeler.addWidget(self.cash_button, 1)
+        satir.addWidget(self.cash_button, 1)
 
         self.card_button = QPushButton("KART")
         self.card_button.setObjectName("cardButton")
@@ -245,8 +251,8 @@ class CartSalePage(Page):
         self.card_button.clicked.connect(
             lambda: self.complete(PaymentMethod.CARD)
         )
-        dugmeler.addWidget(self.card_button, 1)
-        kart.body.addLayout(dugmeler)
+        satir.addWidget(self.card_button, 1)
+        kart.body.addLayout(satir)
         return kart
 
     # ===================== Yaşam döngüsü =================================
@@ -714,9 +720,8 @@ class CartSalePage(Page):
         self.card_button.setText(
             f"KART  {format_tl(self.cart.total)}" if dolu else "KART"
         )
-        self.header.set_subtitle(
-            f"{self.cart.item_count} ürün · {format_tl(self.cart.total)}"
-            if dolu else "Barkodu okutun."
+        self.total_caption.setText(
+            f"TOPLAM · {self.cart.item_count} ürün" if dolu else "TOPLAM"
         )
         self._publish_display()
 

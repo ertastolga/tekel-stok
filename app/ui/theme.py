@@ -237,6 +237,11 @@ QLineEdit#barcodeInput {{
     min-height: {max(metrics.BARCODE_INPUT_HEIGHT,
                      text_height(metrics.FONT_BARCODE_PT) + 18)}px;
 }}
+QLineEdit#barcodeInput[kompakt="evet"] {{
+    font-size: {metrics.FONT_KASA_BARCODE_PT}pt; padding: 4px 10px;
+    min-height: {max(text_height(metrics.FONT_KASA_BARCODE_PT) + 6,
+                     metrics.KASA_BARCODE_MIN_HEIGHT)}px;
+}}
 """
 
 
@@ -480,6 +485,16 @@ QPushButton#touchRemove:pressed {{ background: {t.danger_pressed_light}; }}
 
 /* ---- Rozetler ---- */
 #badge {{ border-radius: 6px; padding: 3px 10px; font-size: {m.FONT_SMALL_PT}pt; }}
+
+/* ---- Kasa araç çubuğu ---- */
+QPushButton#kasaTool {{
+    min-height: {m.TOUCH_TARGET_MIN - 20}px; padding: 9px 14px; font-weight: 600;
+    border-radius: 10px;
+}}
+QMenu#kasaMenu {{ background: {t.surface}; border: 1px solid {t.border}; }}
+QMenu#kasaMenu::item {{ padding: 16px 28px; font-size: {m.FONT_SECTION_PT}pt; }}
+QMenu#kasaMenu::item:selected {{ background: {t.cart_light}; color: {t.text}; }}
+QMenu#kasaMenu::item:disabled {{ color: {t.disabled_fg}; }}
 
 /* ---- Ayarlar bölüm düğmeleri ---- */
 QPushButton#sectionNav {{
