@@ -412,7 +412,7 @@ def hata_raporu_satirlari(plan: IceAktarmaPlani) -> list[list[str]]:
     """Yazılmayan satırlar ve nedenleri (CSV hata raporu için)."""
     satirlar = [["Satır", "Durum", "Barkod", "Ürün adı", "Neden"]]
     for s in plan.satirlar:
-        if s.durum in (GECERSIZ, CAKISMA, ATLANDI) or s.uyarilar:
+        if s.durum in (GECERSIZ, CAKISMA, ATLANDI) or s.uyarilar or s.sifir_onerisi:
             satirlar.append([
                 str(s.satir_no), DURUM_ADLARI[s.durum], s.barkod or "", s.ad or "",
                 "; ".join(s.sorunlar + s.uyarilar

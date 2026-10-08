@@ -209,6 +209,7 @@ class MainWindow(QMainWindow):
         from app.ui.pages.dashboard import DashboardPage
         from app.ui.pages.history import HistoryPage
         from app.ui.pages.home import HomePage
+        from app.ui.pages.import_page import ImportPage
         from app.ui.pages.price_check import PriceCheckPage
         from app.ui.pages.prices import PricesPage
         from app.ui.pages.products import ProductsPage
@@ -228,8 +229,8 @@ class MainWindow(QMainWindow):
             # STOK
             QuickStockPage, StockEntryPage, StockCountPage, StockStatusPage,
             # YÖNETİM
-            DashboardPage, ProductsPage, CategoriesPage, PricesPage, SuppliersPage,
-            HistoryPage, SettingsPage, BarcodeTestPage,
+            DashboardPage, ProductsPage, CategoriesPage, PricesPage, ImportPage,
+            SuppliersPage, HistoryPage, SettingsPage, BarcodeTestPage,
         ]
 
         self.pages = TembelSayfalar(

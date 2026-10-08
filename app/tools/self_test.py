@@ -117,6 +117,8 @@ def run_self_test(report_path: str | None = None) -> int:
             yeniden.close()
 
         kontrol(*_yukseltme_denetimi(Path(gecici)))
+        for denetim in _ice_aktarma_denetimleri(Path(gecici)):
+            kontrol(*denetim)
 
         import logging
 
@@ -184,6 +186,51 @@ def _yukseltme_denetimi(kok: Path) -> tuple[str, bool, str]:
         return ad, not sorunlar, "; ".join(sorunlar)
     except Exception as hata:
         return ad, False, repr(hata)
+
+
+def _ice_aktarma_denetimleri(kok: Path) -> list[tuple[str, bool, str]]:
+    """Ürün listesi okuma: CSV (cp1254) ve XLSX (openpyxl) gidiş-dönüş.
+
+    Derlenmiş exe'de openpyxl'in GERÇEKTEN paketlendiğini kanıtlar: XLSX
+    açıksa bu denetim geçmek zorundadır.
+    """
+    from app.importers.alanlar import barkod_hucresi, fiyat_hucresi
+    from app.importers.okuyucu import XLSX_KULLANILABILIR, oku
+
+    sonuc = []
+    klasor = kok / "içe_aktarma_ğüş"
+    klasor.mkdir(parents=True, exist_ok=True)
+    ad_tr = "Şarap Çeşit İçki"
+    try:
+        csv_yolu = klasor / "liste.csv"
+        csv_yolu.write_bytes(f"Barkod;Ürün adı;Fiyat\r\n0012345;{ad_tr};80,50\r\n"
+                             .encode("cp1254"))
+        tablo = oku(csv_yolu)
+        satir = tablo.satirlar[0]
+        dogru = (satir[0] == "0012345" and satir[1] == ad_tr
+                 and fiyat_hucresi(satir[2]) == 8050)
+        sonuc.append(("CSV urun listesi okunuyor", dogru, repr(satir)))
+    except Exception as hata:
+        sonuc.append(("CSV urun listesi okunuyor", False, repr(hata)))
+    try:
+        if not XLSX_KULLANILABILIR:
+            raise RuntimeError("openpyxl paketlenmemis")
+        import openpyxl
+
+        kitap = openpyxl.Workbook()
+        kitap.active.append(["Barkod", "Ürün adı", "Fiyat"])
+        kitap.active.append(["0012345678905", ad_tr, 80.5])
+        kitap.active.append([8690504001492, "Sayı", 75])
+        xlsx_yolu = klasor / "liste.xlsx"
+        kitap.save(xlsx_yolu)
+        tablo = oku(xlsx_yolu)
+        ilk, ikinci = tablo.satirlar
+        dogru = (ilk[0] == "0012345678905" and ilk[1] == ad_tr
+                 and fiyat_hucresi(ilk[2]) == 8050 and barkod_hucresi(ikinci[0]).sayisal)
+        sonuc.append(("Excel (.xlsx) urun listesi okunuyor", dogru, repr(tablo.satirlar)))
+    except Exception as hata:
+        sonuc.append(("Excel (.xlsx) urun listesi okunuyor", False, repr(hata)))
+    return sonuc
 
 
 def _write_report(path: str | None, satirlar: list[str]) -> None:
