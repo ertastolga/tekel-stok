@@ -1,11 +1,13 @@
 ﻿# Derleme dogrulama.
 #
 # "PyInstaller hata vermedi" YETERLI BIR KANIT DEGILDIR. Bu betik derlenmis
-# exe'yi gercekten calistirir ve su dort seyi dogrular:
+# exe'yi gercekten calistirir ve su bes seyi dogrular:
 #   1. Windows GUI uygulamasi mi (siyah konsol penceresi acilmiyor mu),
 #   2. --self-test donmus kod yollarinda geciyor mu,
 #   3. Temiz bir profilde veritabani ve log olusuyor mu,
-#   4. Ikinci acilista veri KALICI mi.
+#   4. Ikinci acilista veri KALICI mi,
+#   5. V1.1 verisi (depodaki ornegin KOPYASI) yukseltilip oncesinde yedek
+#      aliniyor mu.
 #
 # NOT: Bu dosya UTF-8 BOM ile kaydedilmelidir; aksi halde PowerShell 5.1 onu
 # ANSI okur ve Turkce karsilastirmalar bozulur.
@@ -153,6 +155,57 @@ Test-Step "Kapanis temiz kaydedildi" ($logText -match "kapatildi|kapatıldı")
 $sizeAfter = (Get-Item $dbPath).Length
 Test-Step "Veritabani diske islendi" ($sizeAfter -gt 20000) `
     "$sizeBefore -> $sizeAfter bayt"
+
+# --- 5) V1.1 verisinden yukseltme (V1.2 M12c) -----------------------------
+# Depodaki V1.1 ornek veritabaninin KOPYASI temiz bir veri klasorune konur;
+# donmus exe acilista onu en yeni semaya yukseltmeli ve ONCESINDE yedek
+# almalidir. Sahibin gercek verisine dokunulmaz.
+$fixture = Join-Path $ProjectRoot "tests\fixtures\v1_1_ornek.db"
+$upDir = Join-Path $env:TEMP ("tekelstok_verify_up_" + [Guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Force -Path $upDir | Out-Null
+Copy-Item $fixture (Join-Path $upDir "tekelstok.db")
+$fixtureHash = (Get-FileHash $fixture -Algorithm SHA256).Hash
+
+$app3 = Start-Process -FilePath $ExePath -ArgumentList "--data-dir", $upDir -PassThru
+$titled3 = $null
+for ($i = 0; $i -lt 60; $i++) {
+    $titled3 = Get-Process -Name "TekelStok" -ErrorAction SilentlyContinue |
+        Where-Object { $_.MainWindowTitle -ne "" }
+    if ($null -ne $titled3) { break }
+    Start-Sleep -Seconds 1
+}
+Test-Step "V1.1 verisiyle acildi (yukseltme)" ($null -ne $titled3)
+# Ornek veride acik bir sepet var: pencerenin ustunde "Tamamlanmamis bir
+# sepet bulundu" sorusu bekler ve Qt, soru acikken pencere kapatma istegini
+# yok sayar. Bu durumda yalnizca KENDI baslattigimiz surec (PID) kapatilir;
+# yukseltme ve yedek o noktada coktan diske yazilmistir.
+$app3.CloseMainWindow() | Out-Null
+if (-not $app3.WaitForExit(15000)) {
+    Stop-Process -Id $app3.Id -Force -ErrorAction SilentlyContinue
+}
+Start-Sleep -Seconds 2
+
+$preBackup = Get-ChildItem -Path (Join-Path $upDir "backups") -Filter "guncelleme_oncesi_v1_v*.db" `
+    -ErrorAction SilentlyContinue | Select-Object -First 1
+Test-Step "Guncelleme oncesi yedek alindi" ($null -ne $preBackup) `
+    ($(if ($preBackup) { $preBackup.Name } else { "yok" }))
+if ($preBackup) {
+    # Yedek gecerli bir SQLite dosyasi olmali ("SQLite format 3\0" basligi).
+    $basBayt = [System.IO.File]::ReadAllBytes($preBackup.FullName) | Select-Object -First 16
+    $baslik = [System.Text.Encoding]::ASCII.GetString([byte[]]$basBayt)
+    Test-Step "Guncelleme oncesi yedek bir SQLite veritabani" `
+        ($baslik -eq "SQLite format 3`0") "$($preBackup.Length) bayt"
+}
+Test-Step "Depodaki ornek dosya degismedi" `
+    ((Get-FileHash $fixture -Algorithm SHA256).Hash -eq $fixtureHash)
+$upLog = Join-Path $upDir "logs\app.log"
+$upText = if (Test-Path $upLog) { Get-Content $upLog -Raw -Encoding UTF8 } else { "" }
+# Acilis hatasi kutusunun da basligi olur; bu yuzden yukseltme logdan
+# OLUMLU olarak dogrulanir.
+Test-Step "Sema yukseltmesi loga yazildi" ($upText -match "Şema \d+ sürümüne yükseltildi")
+Test-Step "Yukseltme logunda hata yok" `
+    (($upText -ne "") -and -not ($upText -match "CRITICAL|Veritabanı açılamadı|Veritabani acilamadi"))
+try { Remove-Item $upDir -Recurse -Force -ErrorAction SilentlyContinue } catch {}
 
 # Temizlik
 try { Remove-Item $cleanDir -Recurse -Force -ErrorAction SilentlyContinue } catch {}
