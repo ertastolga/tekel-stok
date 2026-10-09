@@ -30,6 +30,7 @@ from app.ui.widgets.touch_input import (  # noqa: E402
     ScanSafeLineEdit,
     TouchAmountDialog,
     TouchDisplay,
+    TouchKey,
     TouchKeyboard,
     TouchNumpad,
     TouchTextDialog,
@@ -254,3 +255,22 @@ def test_odakta_degilken_okutma_alani_degistirmez(qapp, saat):
     alan.setText("Ruffles")
     okuyucu.feed("8690504001492")
     assert alan.text() == "Ruffles"
+
+
+def test_tus_yazisina_gore_buyur_ama_kuculmez(qapp):
+    """M12d: sabit boyutlu tuş %130 yazıda "Mevcut ürüne bağla", "Temizle"
+    gibi yazıları kesiyordu. Verilen boyut en küçüktür; yazı sığmazsa tuş büyür."""
+    from PySide6.QtGui import QFontMetrics
+
+    kisa = TouchKey("7")
+    kisa.ensurePolished()
+    assert (kisa.width(), kisa.height()) == (metrics.TOUCH_TARGET_MIN, metrics.TOUCH_TARGET_MIN)
+
+    uzun = TouchKey("Mevcut ürüne bağla", width=60)
+    uzun.ensurePolished()
+    olcum = QFontMetrics(uzun.font())
+    assert uzun.width() > olcum.horizontalAdvance(uzun.text())
+    assert uzun.height() >= max(metrics.TOUCH_TARGET_MIN, olcum.height())
+
+    uzun.setText("x")
+    assert uzun.width() == 60, "yazı kısalınca verilen en küçük boyuta döner"

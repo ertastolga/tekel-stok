@@ -288,6 +288,18 @@ def text_height(size: float, lines: int = 1) -> int:
     return satir * lines
 
 
+def cart_row_height() -> int:
+    """Sepet satırı yüksekliği: ad + birim fiyat satırları ÖLÇÜLÜR.
+
+    Sabit 84 px %130 yazıda ürün adının alt kısmını kesiyordu (M12d: "Tuborq").
+    %100'de ``metrics.CART_ROW_HEIGHT`` geçerli kalır (Kasa yerleşim bütçesi).
+    """
+    # iç boşluklar + vurgulu satırın 2 px çerçevesi (üst+alt) + ad/fiyat arası 1 px
+    return max(metrics.CART_ROW_HEIGHT,
+               2 * metrics.CART_ROW_PAD_V + 4 + 1 + text_height(metrics.FONT_CART_NAME_PT)
+               + text_height(metrics.FONT_CART_PRICE_PT))
+
+
 def measured_rules() -> str:
     """QFontMetrics ile ÖLÇÜLEN yükseklik kuralları.
 
@@ -336,6 +348,11 @@ QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit {{
 }}
 #touchDisplay[buyuk="evet"] {{
     min-height: {max(metrics.TOUCH_TARGET_MIN - 16, text_height(metrics.FONT_TOUCH_QTY_PT))}px;
+}}
+/* Para Üstü tutar düğmeleri: #kasaTool / #primary kimlik seçicisi özniteliği
+   geçtiği için kural ikisini birlikte anar. */
+QPushButton#kasaTool[tutarDugmesi="evet"], QPushButton#primary[tutarDugmesi="evet"] {{
+    min-height: {max(metrics.TOUCH_TARGET_MIN - 20, text_height(metrics.FONT_PAYMENT_PT))}px;
 }}
 """
 
@@ -546,6 +563,13 @@ QTableWidget::indicator:checked, QTableView::indicator:checked {{
 #flashLine {{ font-size: {m.FONT_FLASH_LINE_PT}pt; color: {t.text}; }}
 
 /* ---- Dokunmatik POS ---- */
+/* Fiyat değişince "Güncel fiyatları uygula" NAKİT/KART'ın yerini alır:
+   onlar kadar büyük ve belirgin (M12d). */
+QPushButton#primary[odemeYerine="evet"] {{
+    border: 2px solid {t.primary_dark}; border-radius: 10px;
+    font-size: {m.FONT_SECTION_PT}pt; font-weight: 600;
+    min-height: {m.PAYMENT_BUTTON_HEIGHT - 24}px; padding: 10px 16px;
+}}
 /* Satış onayı ASLA kırmızı değildir; kırmızı yalnızca yıkıcı eylemlerde. */
 QPushButton#cashButton {{
     background: {t.primary}; color: {t.on_accent}; border: 2px solid {t.primary_dark};

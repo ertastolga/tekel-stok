@@ -53,10 +53,10 @@ class CartLineRow(QFrame):
         self.setObjectName("cartRow")
         # Düz QFrame alt sınıfı bu bayrak olmadan QSS arka planını ÇİZMEZ.
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setFixedHeight(metrics.CART_ROW_HEIGHT)
+        self.setFixedHeight(theme.cart_row_height())
 
         duzen = QHBoxLayout(self)
-        duzen.setContentsMargins(14, 8, 14, 8)
+        duzen.setContentsMargins(14, metrics.CART_ROW_PAD_V, 14, metrics.CART_ROW_PAD_V)
         duzen.setSpacing(10)
 
         # --- Ad + birim fiyat ---

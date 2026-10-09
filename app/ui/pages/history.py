@@ -120,6 +120,9 @@ class HistoryPage(Page):
         bolucu.addWidget(self._build_sale_detail())
         bolucu.setStretchFactor(0, 5)
         bolucu.setStretchFactor(1, 2)
+        # Ayrıntı paneli (3–4 satır bilgi + kalem tablosu) ezilmesin: yer
+        # yetmezse sayfa kaydırılır (M12d: 1000×600'de bilgi yarıda kesiliyordu).
+        bolucu.setMinimumHeight(theme.text_height(metrics.FONT_BASE_PT) * 10 + 60)
         duzen.addWidget(bolucu, 1)
 
         alt = QHBoxLayout()

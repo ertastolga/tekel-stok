@@ -484,8 +484,8 @@ def kirpilan_yazilar(kok) -> list[tuple[str, int, int]]:
     """
     from PySide6.QtGui import QFontMetrics
     from PySide6.QtWidgets import (
-        QAbstractSpinBox, QComboBox, QLabel, QLineEdit, QPushButton, QStyle,
-        QStyleOptionButton,
+        QComboBox, QLabel, QLineEdit, QPushButton, QStyle, QStyleOptionButton,
+        QStyleOptionComboBox, QStyleOptionFrame,
     )
 
     sonuc = []
@@ -496,29 +496,54 @@ def kirpilan_yazilar(kok) -> list[tuple[str, int, int]]:
         dugme.initStyleOption(secenek)
         icerik = dugme.style().subElementRect(
             QStyle.SubElement.SE_PushButtonContents, secenek, dugme)
-        satir = QFontMetrics(dugme.font()).height()
+        olcum = QFontMetrics(dugme.font())
+        satir = olcum.height()
         if icerik.height() < satir:
             sonuc.append((dugme.text().strip(), satir, icerik.height()))
+        # Yatayda: QPushButton yazıyı kısaltmaz; dar düğmede baş ve son harfler
+        # kesilir (M12d: %130'da "üncel fiyatları uygu").
+        en = max(olcum.horizontalAdvance(s) for s in dugme.text().split("\n"))
+        if not dugme.icon().isNull():
+            en += dugme.iconSize().width() + 4
+        if icerik.width() + 1 < en:
+            sonuc.append((f"{dugme.text().strip()} (genişlik)", en, icerik.width()))
     for etiket in kok.findChildren(QLabel):
         if not etiket.isVisible() or not etiket.text().strip():
             continue
         if etiket.pixmap() is not None and not etiket.pixmap().isNull():
             continue
-        gerek = (etiket.heightForWidth(etiket.width()) if etiket.wordWrap()
-                 else QFontMetrics(etiket.font()).height())
-        mevcut = etiket.contentsRect().height()
+        if etiket.wordWrap():
+            # heightForWidth kenar boşluklarını da içerir: tüm yükseklikle karşılaştır.
+            gerek, mevcut = etiket.heightForWidth(etiket.width()), etiket.height()
+        else:
+            gerek = QFontMetrics(etiket.font()).height()
+            mevcut = etiket.contentsRect().height()
         if gerek > 0 and mevcut + 1 < gerek:
             sonuc.append((etiket.text().strip()[:40], gerek, mevcut))
-    for alan in (kok.findChildren(QLineEdit) + kok.findChildren(QComboBox)
-                 + kok.findChildren(QAbstractSpinBox)):
+    # Tek satırlık giriş: yazı alanı = stil içerik alanı − 1'er px iç boşluk
+    # (sayı kutusu ve düzenlenebilir açılır kutunun içindeki QLineEdit dahil).
+    for alan in kok.findChildren(QLineEdit):
         if not alan.isVisible():
             continue
-        if isinstance(alan, QLineEdit) and isinstance(alan.parent(),
-                                                      (QComboBox, QAbstractSpinBox)):
+        secenek = QStyleOptionFrame()
+        alan.initStyleOption(secenek)
+        yazi = alan.style().subElementRect(
+            QStyle.SubElement.SE_LineEditContents, secenek, alan).height() - 2
+        satir = QFontMetrics(alan.font()).height()
+        if yazi < satir:
+            ad = alan.placeholderText() or type(alan.parent()).__name__
+            sonuc.append((ad, satir, yazi))
+    for kutu in kok.findChildren(QComboBox):
+        if not kutu.isVisible() or kutu.isEditable():
             continue
-        if alan.height() < alan.sizeHint().height():
-            ad = getattr(alan, "placeholderText", lambda: "")() or type(alan).__name__
-            sonuc.append((ad, alan.sizeHint().height(), alan.height()))
+        secenek = QStyleOptionComboBox()
+        kutu.initStyleOption(secenek)
+        alan = kutu.style().subControlRect(
+            QStyle.ComplexControl.CC_ComboBox, secenek,
+            QStyle.SubControl.SC_ComboBoxEditField, kutu)
+        satir = QFontMetrics(kutu.font()).height()
+        if alan.height() < satir:
+            sonuc.append((kutu.currentText() or "QComboBox", satir, alan.height()))
     return sonuc
 
 
@@ -597,9 +622,15 @@ def _profil_calistir(ad: str, cikti: Path, ornek: Path, yalnizca_tasma: bool = F
         svc = create_services()
         b = Baglam(uyg, None, svc, cikti)
 
+        def kirpma_kaydet(yer: str, kok) -> None:
+            for metin, gerek, mevcut in kirpilan_yazilar(kok):
+                kayit["tasmalar"].append({"sayfa": yer, "yon": f"yazı kırpılıyor '{metin}'",
+                                          "gerek": gerek, "mevcut": mevcut})
+
         def kutu_exec(kutu):
             _pencere_goster(kutu)
             b.isle(3)
+            kirpma_kaydet("onay penceresi", kutu)
             b.son_kutu = kutu.grab()
             kutu.hide()
             return QMessageBox.StandardButton.Cancel
@@ -621,6 +652,12 @@ def _profil_calistir(ad: str, cikti: Path, ornek: Path, yalnizca_tasma: bool = F
             try:
                 sonuc = islev(b)
                 b.isle(4)
+                # Her sahnenin DURUMU da denetlenir (açık katman, pencere,
+                # değişen fiyat düğmesi gibi yalnızca o anda görünenler).
+                if sonuc is None:
+                    kirpma_kaydet(f"sahne {sahne_adi}", pencere)
+                elif hasattr(sonuc, "findChildren"):
+                    kirpma_kaydet(f"sahne {sahne_adi}", sonuc)
                 if sonuc is None:
                     sonuc = {sahne_adi: pencere.grab()}
                 elif not isinstance(sonuc, dict):

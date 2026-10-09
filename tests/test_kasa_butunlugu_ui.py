@@ -30,6 +30,7 @@ from app.core.models import PaymentMethod  # noqa: E402
 from app.core.tr import tr_lower  # noqa: E402
 from app.payments.base import PaymentResult  # noqa: E402
 from app.scanner.scan_event import ScanEvent  # noqa: E402
+from app.ui import metrics  # noqa: E402
 from app.ui.main_window import MainWindow  # noqa: E402
 
 BIRA = "8690504001492"
@@ -94,12 +95,20 @@ def test_guncel_fiyat_uygulaninca_gorunen_odenen_kaydedilen_ayni(
     sayfa.refresh()                                  # canlı doğrulama
 
     assert sayfa.apply_prices_button.isVisibleTo(sayfa)
+    # M12d: üç düğme dar ekranda sığmıyordu; onay düğmesi ödemenin YERİNİ alır.
+    assert not sayfa.cash_button.isVisibleTo(sayfa)
+    assert not sayfa.card_button.isVisibleTo(sayfa)
+    # Ödemenin yerini alan düğme ödeme düğmeleri kadar büyük (dokunma hedefi).
+    assert sayfa.apply_prices_button.minimumSizeHint().height() >= metrics.TOUCH_TARGET_MIN
+    assert (sayfa.apply_prices_button.minimumSizeHint().height()
+            >= sayfa.cash_button.minimumSizeHint().height())
     sayfa.apply_prices_button.click()
     qapp.processEvents()
 
     assert sayfa.total_label.text() == "170 TL"
     assert sayfa._rows[bira].issue_text is None
     assert not sayfa.apply_prices_button.isVisibleTo(sayfa)
+    assert sayfa.cash_button.isVisibleTo(sayfa) and sayfa.card_button.isVisibleTo(sayfa)
     assert sayfa.cash_button.isEnabled()
 
     sayfa.cash_button.click()
@@ -378,3 +387,19 @@ def test_hizli_satis_reddi_ayrintiyi_loga_yazar(window, qapp, services, bira, mo
     qapp.processEvents()
     assert any("kilit: veritabani mesgul" in r.getMessage() for r in caplog.records)
     assert "kilit" not in sayfa.banner.detail.text(), "teknik ayrıntı gösterilmez"
+
+
+def test_fiyat_onayindan_sonra_kart_ayari_korunur(sayfa, qapp, services, bira):
+    """KART gizliyse fiyat onayından sonra da gizli kalır; NAKİT geri gelir."""
+    services.settings.set("show_card_button", 0)
+    sayfa.apply_settings()
+    sayfa.handle_scan(ScanEvent(code=BIRA))
+    qapp.processEvents()
+    services.products.set_price(bira, 8500)
+    sayfa.refresh()
+    assert sayfa.apply_prices_button.isVisibleTo(sayfa)
+    assert not sayfa.cash_button.isVisibleTo(sayfa)
+    sayfa.apply_prices_button.click()
+    qapp.processEvents()
+    assert sayfa.cash_button.isVisibleTo(sayfa)
+    assert not sayfa.card_button.isVisibleTo(sayfa), "KART ayarı korunur"

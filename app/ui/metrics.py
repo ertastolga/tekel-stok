@@ -78,6 +78,8 @@ BARCODE_INPUT_HEIGHT = 60
 TOUCH_TARGET_MIN = 56
 #: Sepet satırı: 56 px düğme + dikey nefes payı.
 CART_ROW_HEIGHT = 84
+#: Sepet satırının üst/alt iç boşluğu (``theme.cart_row_height`` ile aynı).
+CART_ROW_PAD_V = 6
 #: NAKİT / KART düğmeleri: ekranın en büyük hedefleri.
 PAYMENT_BUTTON_HEIGHT = 88
 #: Kasa araç çubuğundaki kompakt barkod alanı (araç çubuğu ≤ 64 px):

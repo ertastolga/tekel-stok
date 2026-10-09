@@ -122,6 +122,7 @@ class CartSalePage(KatmanSahibi, Page):
     kasa_sayfasi = True
     # completes_with_shortcut TANIMLANMAZ: taban sınıftan False gelir.
     # Satış yalnızca açık NAKİT/KART eylemiyle tamamlanır.
+    _kart_gorunur = True            # ayar okunamazsa KART görünür (V1.1 gibi)
 
     def __init__(self, services, main_window) -> None:
         super().__init__(services, main_window)
@@ -171,9 +172,20 @@ class CartSalePage(KatmanSahibi, Page):
         try:
             self.mode_button.setVisible(self.services.settings.show_quick_sale())
             # NAKİT daima vardır; KART gizlenebilir (VERESİYE / DİĞER sunulmaz).
-            self.card_button.setVisible(self.services.settings.show_card_button())
+            self._kart_gorunur = self.services.settings.show_card_button()
         except Exception:
             log.exception("Kasa ayarları uygulanamadı")
+        self._odeme_dugmeleri()
+
+    def _odeme_dugmeleri(self) -> None:
+        """Fiyatı değişen satır varken "Güncel fiyatları uygula" ödeme
+        düğmelerinin YERİNİ alır; ödeme o durumda zaten kapalıdır. Üçü yan yana
+        dar ekranda sığmıyordu (M12d: 1000×600'de "AKİT 105 T"). Fiyatlar
+        onaylanınca NAKİT/KART geri gelir."""
+        fiyat = any(s.kind == SORUN_FIYAT_DEGISTI for s in self._issues.values())
+        self.apply_prices_button.setVisible(fiyat)
+        self.cash_button.setVisible(not fiyat)
+        self.card_button.setVisible(not fiyat and self._kart_gorunur)
 
     # ===================== Kurulum =======================================
     def _build_toolbar(self) -> QWidget:
@@ -224,8 +236,9 @@ class CartSalePage(KatmanSahibi, Page):
     def _build_list(self) -> QWidget:
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
-        # Sepet listesi ekranin ASIL alanidir: en az iki satır her zaman görünür.
-        self.scroll.setMinimumHeight(metrics.CART_ROW_HEIGHT * 2 + 8 + 4)
+        # Sepet listesi ekranin ASIL alanidir: en az iki satır her zaman görünür
+        # (iki satır + aradaki 8 px; kaydırma alanının çerçevesi yok).
+        self.scroll.setMinimumHeight(theme.cart_row_height() * 2 + 8)
         self.scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
@@ -267,11 +280,11 @@ class CartSalePage(KatmanSahibi, Page):
         # düzeltilmez, kasiyer açıkça onaylar.
         self.apply_prices_button = QPushButton("Güncel fiyatları uygula")
         self.apply_prices_button.setObjectName("primary")
-        self.apply_prices_button.setMinimumHeight(metrics.TOUCH_TARGET_MIN)
+        self.apply_prices_button.setProperty("odemeYerine", "evet")   # NAKİT/KART boyu
         self.apply_prices_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.apply_prices_button.clicked.connect(self.apply_current_prices)
         self.apply_prices_button.setVisible(False)
-        satir.addWidget(self.apply_prices_button)
+        satir.addWidget(self.apply_prices_button, 2)
 
         self.cash_button = QPushButton("NAKİT")
         self.cash_button.setObjectName("cashButton")
@@ -979,9 +992,7 @@ class CartSalePage(KatmanSahibi, Page):
             sorun = self._issues.get(line.product_id)
             satir.set_issue(sorun.message if sorun else None)
 
-        self.apply_prices_button.setVisible(
-            any(s.kind == SORUN_FIYAT_DEGISTI for s in self._issues.values())
-        )
+        self._odeme_dugmeleri()
         dolu = not self.cart.is_empty
         self.empty.setVisible(not dolu)
         self.clear_button.setEnabled(dolu)

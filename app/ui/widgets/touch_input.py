@@ -20,7 +20,8 @@ Kurallar
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import (
     QDialog,
     QGridLayout,
@@ -29,6 +30,8 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QSizePolicy,
+    QStyle,
+    QStyleOptionButton,
     QVBoxLayout,
     QWidget,
 )
@@ -63,9 +66,38 @@ class TouchKey(QPushButton):
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setAutoDefault(False)
         self.setDefault(False)
-        self.setMinimumSize(width or metrics.TOUCH_TARGET_MIN, metrics.TOUCH_TARGET_MIN)
+        self._temel_en = width or metrics.TOUCH_TARGET_MIN
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.setFixedSize(width or metrics.TOUCH_TARGET_MIN, metrics.TOUCH_TARGET_MIN)
+        self.setFixedSize(self._temel_en, metrics.TOUCH_TARGET_MIN)
+
+    def _yaziya_uydur(self) -> None:
+        """Yazı tuşa sığmıyorsa tuş büyür; verilen boyut EN KÜÇÜKTÜR.
+
+        Sabit boyut %130 yazıda "Temizle", "Mevcut ürüne bağla" gibi yazıları
+        kesiyordu (M12d). Ölçü, ekran görüntüsü denetimindeki içerik alanıdır.
+        """
+        secenek = QStyleOptionButton()
+        self.initStyleOption(secenek)
+        icerik = self.style().subElementRect(
+            QStyle.SubElement.SE_PushButtonContents, secenek, self)
+        olcum = QFontMetrics(self.font())
+        en = max(self._temel_en,
+                 olcum.horizontalAdvance(self.text()) + self.width() - icerik.width() + 2)
+        boy = max(metrics.TOUCH_TARGET_MIN, olcum.height() + self.height() - icerik.height())
+        if (en, boy) != (self.width(), self.height()):
+            self.setFixedSize(en, boy)
+
+    def setText(self, text: str) -> None:  # noqa: N802
+        super().setText(text)
+        if self.testAttribute(Qt.WidgetAttribute.WA_WState_Polished):
+            self._yaziya_uydur()
+
+    def event(self, olay) -> bool:
+        sonuc = super().event(olay)
+        if olay.type() in (QEvent.Type.Polish, QEvent.Type.FontChange,
+                           QEvent.Type.StyleChange):
+            self._yaziya_uydur()
+        return sonuc
 
 
 class TouchDisplay(QLabel):

@@ -22,7 +22,7 @@ from PySide6.QtCore import QPoint  # noqa: E402
 from PySide6.QtWidgets import QPushButton  # noqa: E402
 
 from app.scanner.scan_event import ScanEvent  # noqa: E402
-from app.ui import metrics  # noqa: E402
+from app.ui import metrics, theme  # noqa: E402
 from app.ui.pages import cart_sale, quick_sale  # noqa: E402
 from app.ui.widgets.common import PageHeader  # noqa: E402
 from app.ui.widgets.kasa import ARAC_CUBUGU_YUKSEKLIGI  # noqa: E402
@@ -83,7 +83,9 @@ def test_sepet_listesi_en_az_iki_satir_ve_odeme_tek_satir(window, qapp, services
     sayfa.handle_scan(ScanEvent(code=BIRA))
     sayfa._add_product(cips_urunu, 1, None, 1)
     qapp.processEvents()
-    assert sayfa.scroll.viewport().height() >= 2 * metrics.CART_ROW_HEIGHT
+    # Ölçülen satır yüksekliği (%100'de CART_ROW_HEIGHT; M12d).
+    assert sayfa.scroll.viewport().height() >= 2 * theme.cart_row_height()
+    assert theme.cart_row_height() >= metrics.CART_ROW_HEIGHT
 
     def dikey_aralik(gerec):
         ust = gerec.mapTo(sayfa, QPoint(0, 0)).y()

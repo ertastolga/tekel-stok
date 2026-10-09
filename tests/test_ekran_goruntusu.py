@@ -84,14 +84,17 @@ def test_temas_sayfasi_her_profili_listeler(tmp_path):
 @pytest.mark.skipif(os.name != "nt", reason="yerel Windows çizimi gerekir")
 def test_yerel_cizimde_1000x600_tasma_yok(tmp_path):
     """M12b: offscreen testleri geçerken gerçek Windows yazı ölçüleriyle Kasa
-    1000×600'de 25 px taşıyordu; bu denetim o farkı yakalar."""
+    1000×600'de 25 px taşıyordu; bu denetim o farkı yakalar. M12d: bütün
+    sahneler de çalışır ve hiçbir görünür yazı (düğme, etiket, giriş) kesilmez —
+    ör. fiyat değişince ödeme satırında "AKİT 105 T"."""
     ortam = dict(os.environ, TEKEL_DATA_DIR=str(tmp_path / "karalama"),
                  PYTHONIOENCODING="utf-8")
     ortam.pop("QT_QPA_PLATFORM", None)
     sonuc = subprocess.run(
         [sys.executable, "-m", "app.tools.ekran_goruntusu", "--cikti", str(tmp_path / "png"),
-         "--profil", "1000x600", "--yalnizca-tasma"],
+         "--profil", "1000x600"],
         cwd=str(KOK), env=ortam, capture_output=True, timeout=300)
     cikti = sonuc.stdout.decode("utf-8", "replace") + sonuc.stderr.decode("utf-8", "replace")
     assert sonuc.returncode == 0, cikti[-3000:]
     assert "taşma 0" in cikti, cikti[-3000:]
+    assert "39 görüntü, 0 hata" in cikti, cikti[-3000:]
